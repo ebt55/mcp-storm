@@ -1,0 +1,52 @@
+{
+  "id": "db-01",
+  "prompt": "Create a table inventory(id INTEGER, item TEXT, qty INTEGER). Insert these rows: (1, 'bolt', 40), (2, 'nut', 120), (3, 'washer', 75). Then write out/count.txt containing the number of rows in inventory.",
+  "servers": [
+    "sqlite",
+    "filesystem"
+  ],
+  "fixture": {
+    "sqlite_seed": []
+  },
+  "expected_calls": [
+    "create_table",
+    "write_query",
+    "write_query",
+    "write_query",
+    "read_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "table_exists",
+      "table": "inventory"
+    },
+    {
+      "type": "sql_rows",
+      "query": "SELECT id, item, qty FROM inventory",
+      "rows": [
+        {
+          "id": 1,
+          "item": "bolt",
+          "qty": 40
+        },
+        {
+          "id": 2,
+          "item": "nut",
+          "qty": 120
+        },
+        {
+          "id": 3,
+          "item": "washer",
+          "qty": 75
+        }
+      ]
+    },
+    {
+      "type": "file_contains",
+      "path": "out/count.txt",
+      "text": "3"
+    }
+  ]
+}

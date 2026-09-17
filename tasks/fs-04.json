@@ -1,0 +1,28 @@
+{
+  "id": "fs-04",
+  "prompt": "Read inputs/q1.txt, inputs/q2.txt and inputs/q3.txt. Each holds one integer. Write out/max.txt containing the largest of the three numbers.",
+  "servers": [
+    "filesystem"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/q1.txt": "120\n",
+      "inputs/q2.txt": "4550\n",
+      "inputs/q3.txt": "980\n"
+    }
+  },
+  "expected_calls": [
+    "read_file",
+    "read_file",
+    "read_file",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "file_contains",
+      "path": "out/max.txt",
+      "text": "4550"
+    }
+  ]
+}

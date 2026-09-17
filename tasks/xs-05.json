@@ -1,0 +1,26 @@
+{
+  "id": "xs-05",
+  "prompt": "The tasks table (title TEXT, status TEXT) already exists. Write out/done.txt with the number of tasks whose status is completed.",
+  "servers": [
+    "sqlite",
+    "filesystem"
+  ],
+  "fixture": {
+    "sqlite_seed": [
+      "CREATE TABLE tasks (title TEXT, status TEXT)",
+      "INSERT INTO tasks VALUES ('a','completed'), ('b','open'), ('c','completed'), ('d','blocked')"
+    ]
+  },
+  "expected_calls": [
+    "read_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "file_contains",
+      "path": "out/done.txt",
+      "text": "2"
+    }
+  ]
+}

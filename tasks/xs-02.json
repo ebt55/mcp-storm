@@ -1,0 +1,48 @@
+{
+  "id": "xs-02",
+  "prompt": "inputs/orders.json holds a JSON array of {\"id\":..., \"total\":..., \"fulfilled\":...}. Create a table orders(id INTEGER, total INTEGER) containing ONLY the fulfilled orders, and write out/fulfilled_total.txt with the sum of their totals.",
+  "servers": [
+    "filesystem",
+    "sqlite"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/orders.json": "[{\"id\":1,\"total\":50,\"fulfilled\":true},{\"id\":2,\"total\":30,\"fulfilled\":false},{\"id\":3,\"total\":70,\"fulfilled\":true},{\"id\":4,\"total\":20,\"fulfilled\":true}]\n"
+    }
+  },
+  "expected_calls": [
+    "read_file",
+    "create_table",
+    "write_query",
+    "write_query",
+    "write_query",
+    "read_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "sql_rows",
+      "query": "SELECT id, total FROM orders ORDER BY id",
+      "rows": [
+        {
+          "id": 1,
+          "total": 50
+        },
+        {
+          "id": 3,
+          "total": 70
+        },
+        {
+          "id": 4,
+          "total": 20
+        }
+      ]
+    },
+    {
+      "type": "file_contains",
+      "path": "out/fulfilled_total.txt",
+      "text": "140"
+    }
+  ]
+}

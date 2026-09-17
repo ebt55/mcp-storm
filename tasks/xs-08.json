@@ -1,0 +1,30 @@
+{
+  "id": "xs-08",
+  "prompt": "The books table (title TEXT, author TEXT, year INTEGER) exists. Write out/authors.txt with the DISTINCT author names sorted alphabetically, one per line.",
+  "servers": [
+    "sqlite",
+    "filesystem"
+  ],
+  "fixture": {
+    "sqlite_seed": [
+      "CREATE TABLE books (title TEXT, author TEXT, year INTEGER)",
+      "INSERT INTO books VALUES ('dune','herbert',1965), ('left hand','leguin',1969), ('dreamers','herbert',2002), ('disgaea','nishida',2003)"
+    ]
+  },
+  "expected_calls": [
+    "read_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "file_lines",
+      "path": "out/authors.txt",
+      "lines": [
+        "herbert",
+        "leguin",
+        "nishida"
+      ]
+    }
+  ]
+}

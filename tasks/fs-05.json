@@ -1,0 +1,43 @@
+{
+  "id": "fs-05",
+  "prompt": "Move every .log file from inputs/ into a new directory archive/. The inputs directory must end up with no .log files left.",
+  "servers": [
+    "filesystem"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/app.log": "started\n",
+      "inputs/data.log": "rows=9\n",
+      "inputs/keep.txt": "stay\n"
+    }
+  },
+  "expected_calls": [
+    "create_directory",
+    "move_file",
+    "move_file"
+  ],
+  "grader": [
+    {
+      "type": "file_contains",
+      "path": "archive/app.log",
+      "text": "started"
+    },
+    {
+      "type": "file_contains",
+      "path": "archive/data.log",
+      "text": "rows=9"
+    },
+    {
+      "type": "file_absent",
+      "path": "inputs/app.log"
+    },
+    {
+      "type": "file_absent",
+      "path": "inputs/data.log"
+    },
+    {
+      "type": "file_exists",
+      "path": "inputs/keep.txt"
+    }
+  ]
+}

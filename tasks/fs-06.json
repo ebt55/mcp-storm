@@ -1,0 +1,24 @@
+{
+  "id": "fs-06",
+  "prompt": "Read inputs/note.txt and count how many DISTINCT words it has (case-insensitive). Write out/words.txt containing that count.",
+  "servers": [
+    "filesystem"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/note.txt": "The quick brown fox jumps over the lazy dog the end\n"
+    }
+  },
+  "expected_calls": [
+    "read_file",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "file_contains",
+      "path": "out/words.txt",
+      "text": "9"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "id": "xs-04",
+  "prompt": "inputs/stock.json is a JSON array of {\"item\":..., \"qty\":...}. Create a table restock(item TEXT, qty INTEGER) with every item whose qty is below 20, and write out/low_stock.txt with those item names, one per line, in input order.",
+  "servers": [
+    "filesystem",
+    "sqlite"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/stock.json": "[{\"item\":\"bolt\",\"qty\":5},{\"item\":\"nut\",\"qty\":50},{\"item\":\"washer\",\"qty\":12},{\"item\":\"screw\",\"qty\":19},{\"item\":\"nail\",\"qty\":120}]\n"
+    }
+  },
+  "expected_calls": [
+    "read_file",
+    "create_table",
+    "write_query",
+    "write_query",
+    "write_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "sql_rows",
+      "query": "SELECT item, qty FROM restock ORDER BY item",
+      "rows": [
+        {
+          "item": "bolt",
+          "qty": 5
+        },
+        {
+          "item": "screw",
+          "qty": 19
+        },
+        {
+          "item": "washer",
+          "qty": 12
+        }
+      ]
+    },
+    {
+      "type": "file_lines",
+      "path": "out/low_stock.txt",
+      "lines": [
+        "bolt",
+        "washer",
+        "screw"
+      ]
+    }
+  ]
+}

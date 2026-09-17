@@ -1,0 +1,32 @@
+{
+  "id": "fs-03",
+  "prompt": "The inputs/ directory contains four .txt files. Write out/index.txt with their filenames in alphabetical order, one per line.",
+  "servers": [
+    "filesystem"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/zeta.txt": "1",
+      "inputs/alpha.txt": "2",
+      "inputs/mu.txt": "3",
+      "inputs/beta.txt": "4"
+    }
+  },
+  "expected_calls": [
+    "list_directory",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "file_lines",
+      "path": "out/index.txt",
+      "lines": [
+        "alpha.txt",
+        "beta.txt",
+        "mu.txt",
+        "zeta.txt"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "id": "xs-01",
+  "prompt": "inputs/people.json holds a JSON array of {\"name\":..., \"city\":...} objects. Create a table people(name TEXT, city TEXT), insert every person, and write out/n.txt with the number of people.",
+  "servers": [
+    "filesystem",
+    "sqlite"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/people.json": "[{\"name\":\"ada\",\"city\":\"berlin\"},{\"name\":\"bob\",\"city\":\"oslo\"},{\"name\":\"cyd\",\"city\":\"lima\"},{\"name\":\"dee\",\"city\":\"oslo\"}]\n"
+    }
+  },
+  "expected_calls": [
+    "read_file",
+    "create_table",
+    "write_query",
+    "read_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "sql_rows",
+      "query": "SELECT name, city FROM people ORDER BY name",
+      "rows": [
+        {
+          "name": "ada",
+          "city": "berlin"
+        },
+        {
+          "name": "bob",
+          "city": "oslo"
+        },
+        {
+          "name": "cyd",
+          "city": "lima"
+        },
+        {
+          "name": "dee",
+          "city": "oslo"
+        }
+      ]
+    },
+    {
+      "type": "file_contains",
+      "path": "out/n.txt",
+      "text": "4"
+    }
+  ]
+}

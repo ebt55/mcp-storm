@@ -1,0 +1,48 @@
+{
+  "id": "xs-06",
+  "prompt": "inputs/sales.json is a JSON array of {\"region\":..., \"amount\":...}. Create a table region_totals(region TEXT, total INTEGER) with the sum of amounts per region, and write out/best.txt with the region name that has the highest total.",
+  "servers": [
+    "filesystem",
+    "sqlite"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/sales.json": "[{\"region\":\"east\",\"amount\":100},{\"region\":\"west\",\"amount\":250},{\"region\":\"east\",\"amount\":80},{\"region\":\"north\",\"amount\":190}]\n"
+    }
+  },
+  "expected_calls": [
+    "read_file",
+    "create_table",
+    "write_query",
+    "write_query",
+    "write_query",
+    "read_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "sql_rows",
+      "query": "SELECT region, total FROM region_totals",
+      "rows": [
+        {
+          "region": "east",
+          "total": 180
+        },
+        {
+          "region": "north",
+          "total": 190
+        },
+        {
+          "region": "west",
+          "total": 250
+        }
+      ]
+    },
+    {
+      "type": "file_contains",
+      "path": "out/best.txt",
+      "text": "west"
+    }
+  ]
+}

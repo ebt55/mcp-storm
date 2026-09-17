@@ -1,0 +1,51 @@
+{
+  "id": "xs-03",
+  "prompt": "inputs/incidents.json holds incident records with fields id and severity (integer). Create a table incidents(id INTEGER, severity INTEGER), insert the THREE most severe incidents, and write out/manifest.txt with their ids ordered from most to least severe.",
+  "servers": [
+    "filesystem",
+    "sqlite"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/incidents.json": "[{\"id\":101,\"severity\":3},{\"id\":102,\"severity\":8},{\"id\":103,\"severity\":5},{\"id\":104,\"severity\":9},{\"id\":105,\"severity\":1}]\n"
+    }
+  },
+  "expected_calls": [
+    "read_file",
+    "create_table",
+    "write_query",
+    "write_query",
+    "write_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "sql_rows",
+      "query": "SELECT id, severity FROM incidents",
+      "rows": [
+        {
+          "id": 104,
+          "severity": 9
+        },
+        {
+          "id": 102,
+          "severity": 8
+        },
+        {
+          "id": 103,
+          "severity": 5
+        }
+      ]
+    },
+    {
+      "type": "file_lines",
+      "path": "out/manifest.txt",
+      "lines": [
+        "104",
+        "102",
+        "103"
+      ]
+    }
+  ]
+}

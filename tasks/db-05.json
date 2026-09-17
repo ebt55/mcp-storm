@@ -1,0 +1,45 @@
+{
+  "id": "db-05",
+  "prompt": "The prices table (sku TEXT, qty INTEGER) exists. Create a table bulk(sku TEXT, qty INTEGER), move every prices row with qty > 100 into bulk, and delete those rows from prices.",
+  "servers": [
+    "sqlite"
+  ],
+  "fixture": {
+    "sqlite_seed": [
+      "CREATE TABLE prices (sku TEXT, qty INTEGER)",
+      "INSERT INTO prices VALUES ('A1', 120), ('B2', 40), ('C3', 250), ('D4', 99)"
+    ]
+  },
+  "expected_calls": [
+    "create_table",
+    "write_query",
+    "write_query",
+    "read_query"
+  ],
+  "grader": [
+    {
+      "type": "sql_rows",
+      "query": "SELECT sku, qty FROM bulk ORDER BY qty",
+      "rows": [
+        {
+          "sku": "A1",
+          "qty": 120
+        },
+        {
+          "sku": "C3",
+          "qty": 250
+        }
+      ]
+    },
+    {
+      "type": "sql_scalar",
+      "query": "SELECT COUNT(*) FROM prices WHERE qty > 100",
+      "equals": 0
+    },
+    {
+      "type": "sql_scalar",
+      "query": "SELECT COUNT(*) FROM prices",
+      "equals": 2
+    }
+  ]
+}

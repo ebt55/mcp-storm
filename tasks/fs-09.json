@@ -1,0 +1,28 @@
+{
+  "id": "fs-09",
+  "prompt": "inputs/employees.txt holds 'name,dept' lines. Write out/engineers.txt with the names of employees whose dept is Eng, one per line, in the order they appear in the input.",
+  "servers": [
+    "filesystem"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/employees.txt": "ada,Eng\nbob,Sales\ncara,Eng\ndan,HR\neve,Eng\n"
+    }
+  },
+  "expected_calls": [
+    "read_file",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "file_lines",
+      "path": "out/engineers.txt",
+      "lines": [
+        "ada",
+        "cara",
+        "eve"
+      ]
+    }
+  ]
+}

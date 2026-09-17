@@ -1,0 +1,51 @@
+{
+  "id": "xs-07",
+  "prompt": "inputs/metrics.json is a JSON array of {\"name\":..., \"value\":...}. Create a table snapshots(name TEXT, value INTEGER) with every entry, and write out/report.txt with one 'name: value' line per metric, sorted by name.",
+  "servers": [
+    "filesystem",
+    "sqlite"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/metrics.json": "[{\"name\":\"cpu\",\"value\":73},{\"name\":\"mem\",\"value\":58},{\"name\":\"disk\",\"value\":41}]\n"
+    }
+  },
+  "expected_calls": [
+    "read_file",
+    "create_table",
+    "write_query",
+    "write_query",
+    "write_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "sql_rows",
+      "query": "SELECT name, value FROM snapshots",
+      "rows": [
+        {
+          "name": "cpu",
+          "value": 73
+        },
+        {
+          "name": "disk",
+          "value": 41
+        },
+        {
+          "name": "mem",
+          "value": 58
+        }
+      ]
+    },
+    {
+      "type": "file_lines",
+      "path": "out/report.txt",
+      "lines": [
+        "cpu: 73",
+        "disk: 41",
+        "mem: 58"
+      ]
+    }
+  ]
+}

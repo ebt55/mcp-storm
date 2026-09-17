@@ -1,0 +1,40 @@
+{
+  "id": "db-06",
+  "prompt": "The logs table (level TEXT, msg TEXT) exists. Create a table alerts(level TEXT, msg TEXT) and insert every log row whose level is ERROR. Write out/alert_count.txt with the number of alerts.",
+  "servers": [
+    "sqlite",
+    "filesystem"
+  ],
+  "fixture": {
+    "sqlite_seed": [
+      "CREATE TABLE logs (level TEXT, msg TEXT)",
+      "INSERT INTO logs VALUES ('ERROR','disk full'), ('INFO','ok'), ('ERROR','timeout'), ('WARN','slow')"
+    ]
+  },
+  "expected_calls": [
+    "create_table",
+    "write_query",
+    "read_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "sql_rows",
+      "query": "SELECT msg FROM alerts ORDER BY msg",
+      "rows": [
+        {
+          "msg": "disk full"
+        },
+        {
+          "msg": "timeout"
+        }
+      ]
+    },
+    {
+      "type": "file_contains",
+      "path": "out/alert_count.txt",
+      "text": "2"
+    }
+  ]
+}

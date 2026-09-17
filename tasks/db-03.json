@@ -1,0 +1,26 @@
+{
+  "id": "db-03",
+  "prompt": "The prices table (sku TEXT, qty INTEGER, price REAL) already exists. Write out/value.txt with the total inventory value (sum of qty * price).",
+  "servers": [
+    "sqlite",
+    "filesystem"
+  ],
+  "fixture": {
+    "sqlite_seed": [
+      "CREATE TABLE prices (sku TEXT, qty INTEGER, price REAL)",
+      "INSERT INTO prices VALUES ('A1', 10, 2.5), ('B2', 4, 12.0), ('C3', 25, 0.4)"
+    ]
+  },
+  "expected_calls": [
+    "read_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "file_contains",
+      "path": "out/value.txt",
+      "text": "83"
+    }
+  ]
+}

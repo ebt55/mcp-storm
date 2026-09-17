@@ -1,0 +1,21 @@
+{
+  "id": "fs-08",
+  "prompt": "Create the directory out/reports and inside it a file status.txt containing exactly the text READY.",
+  "servers": [
+    "filesystem"
+  ],
+  "fixture": {
+    "files": {}
+  },
+  "expected_calls": [
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "file_contains",
+      "path": "out/reports/status.txt",
+      "text": "READY"
+    }
+  ]
+}

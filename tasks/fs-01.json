@@ -1,0 +1,37 @@
+{
+  "id": "fs-01",
+  "prompt": "Create a directory named notes. Inside it create three files: a.txt containing the word alpha, b.txt which must contain the exact line revenue: 42000, and c.txt listing the other two filenames (a.txt and b.txt).",
+  "servers": [
+    "filesystem"
+  ],
+  "fixture": {
+    "files": {}
+  },
+  "expected_calls": [
+    "create_directory",
+    "write_file",
+    "write_file",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "file_contains",
+      "path": "notes/a.txt",
+      "text": "alpha"
+    },
+    {
+      "type": "file_contains",
+      "path": "notes/b.txt",
+      "text": "revenue: 42000"
+    },
+    {
+      "type": "file_contains_all",
+      "path": "notes/c.txt",
+      "texts": [
+        "a.txt",
+        "b.txt"
+      ],
+      "ordered": false
+    }
+  ]
+}

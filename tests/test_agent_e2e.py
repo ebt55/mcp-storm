@@ -169,3 +169,38 @@ def test_verdict_parser_first_word_only():
     assert parse_verdict("The task is complete\nmore text") == "continue"  # 'The' is not a verdict
     assert parse_verdict("") == "continue"
     assert parse_verdict("\n\n") == "continue"
+
+
+async def test_graded_task_end_to_end(tmp_path, run_paths):
+    """Real task (fs-01) -> fake backend -> agent -> objective grade -> completed."""
+    from mcp_storm.grading.grader import grade
+    from mcp_storm.grading.outcomes import classify
+    from mcp_storm.tasks_io import load_task
+
+    run_id, runs, ledger, sandbox = run_paths
+    task = load_task("fs-01")
+    sandbox = build_sandbox(task, Path(sandbox))
+    model = scripted_model([
+        AIMessage(content="", tool_calls=[{
+            "name": "create_directory", "args": {"path": "notes"},
+            "id": "c0", "type": "tool_call"}]),
+        AIMessage(content="continue"),
+        AIMessage(content="", tool_calls=[
+            write_call("c1", "notes/a.txt", "alpha"),
+            write_call("c2", "notes/b.txt", "revenue: 42000"),
+            write_call("c3", "notes/c.txt", "a.txt\nb.txt"),
+        ]),
+        AIMessage(content="continue"),
+        AIMessage(content="All three files written. DONE."),
+        AIMessage(content="done"),
+    ])
+    final = await run_agent(tmp_path, run_id, ledger, sandbox, model, {})
+    result = grade(task, sandbox)
+    outcome = classify(
+        grader_result=result,
+        escalated=bool(final.get("escalated")),
+        final_messages=final["messages"],
+    )
+    assert result["passed"], result["failures"]
+    assert outcome["outcome"] == "completed"
+    assert outcome["refusal"] is False

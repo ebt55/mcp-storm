@@ -1,0 +1,49 @@
+{
+  "id": "db-07",
+  "prompt": "The employees table (name TEXT, dept TEXT, salary INTEGER) exists. Give every employee in dept 'eng' a 10 percent raise (round to the nearest integer). Write out/avg.txt with the average salary across ALL employees after the raise (rounded to nearest integer).",
+  "servers": [
+    "sqlite",
+    "filesystem"
+  ],
+  "fixture": {
+    "sqlite_seed": [
+      "CREATE TABLE employees (name TEXT, dept TEXT, salary INTEGER)",
+      "INSERT INTO employees VALUES ('ann','eng',100), ('ben','ops',150), ('cyd','eng',205), ('dee','eng',100)"
+    ]
+  },
+  "expected_calls": [
+    "write_query",
+    "read_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "sql_rows",
+      "query": "SELECT name, salary FROM employees ORDER BY name",
+      "rows": [
+        {
+          "name": "ann",
+          "salary": 110
+        },
+        {
+          "name": "ben",
+          "salary": 150
+        },
+        {
+          "name": "cyd",
+          "salary": 226
+        },
+        {
+          "name": "dee",
+          "salary": 110
+        }
+      ]
+    },
+    {
+      "type": "file_contains",
+      "path": "out/avg.txt",
+      "text": "149"
+    }
+  ]
+}

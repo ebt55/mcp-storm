@@ -1,0 +1,28 @@
+{
+  "id": "fs-02",
+  "prompt": "Read inputs/config.txt. It contains key: value lines. Write out/config.json as a JSON object mapping each key to its value, with numbers kept as numbers.",
+  "servers": [
+    "filesystem"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/config.txt": "mode: strict\nretries: 3\nthreshold: 12\n"
+    }
+  },
+  "expected_calls": [
+    "read_file",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "file_json",
+      "path": "out/config.json",
+      "fields": {
+        "mode": "strict",
+        "retries": 3,
+        "threshold": 12
+      }
+    }
+  ]
+}

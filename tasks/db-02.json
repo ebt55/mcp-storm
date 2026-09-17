@@ -1,0 +1,53 @@
+{
+  "id": "db-02",
+  "prompt": "Create a table metrics(id INTEGER, name TEXT, value INTEGER). inputs/ holds three files; each filename (without extension) is a name and its content is an integer value. Insert one row per file (id 1,2,3 in filename order). Write out/total.txt with the sum of value.",
+  "servers": [
+    "filesystem",
+    "sqlite"
+  ],
+  "fixture": {
+    "files": {
+      "inputs/uptime.txt": "99\n",
+      "inputs/latency.txt": "240\n",
+      "inputs/errors.txt": "7\n"
+    }
+  },
+  "expected_calls": [
+    "list_directory",
+    "read_file",
+    "read_file",
+    "read_file",
+    "create_table",
+    "write_query",
+    "write_query",
+    "write_query",
+    "read_query",
+    "create_directory",
+    "write_file"
+  ],
+  "grader": [
+    {
+      "type": "sql_rows",
+      "query": "SELECT name, value FROM metrics",
+      "rows": [
+        {
+          "name": "errors",
+          "value": 7
+        },
+        {
+          "name": "latency",
+          "value": 240
+        },
+        {
+          "name": "uptime",
+          "value": 99
+        }
+      ]
+    },
+    {
+      "type": "file_contains",
+      "path": "out/total.txt",
+      "text": "346"
+    }
+  ]
+}

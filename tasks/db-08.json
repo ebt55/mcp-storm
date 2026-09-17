@@ -1,0 +1,40 @@
+{
+  "id": "db-08",
+  "prompt": "The readings table (sensor TEXT, value INTEGER) exists. Create a table summary(metric TEXT, value INTEGER) with exactly three rows: ('min', <min value>), ('max', <max value>), ('count', <number of readings>).",
+  "servers": [
+    "sqlite"
+  ],
+  "fixture": {
+    "sqlite_seed": [
+      "CREATE TABLE readings (sensor TEXT, value INTEGER)",
+      "INSERT INTO readings VALUES ('t1', 3), ('t2', 17), ('t3', 8), ('t4', 12)"
+    ]
+  },
+  "expected_calls": [
+    "read_query",
+    "create_table",
+    "write_query",
+    "write_query",
+    "write_query"
+  ],
+  "grader": [
+    {
+      "type": "sql_rows",
+      "query": "SELECT metric, value FROM summary",
+      "rows": [
+        {
+          "metric": "min",
+          "value": 3
+        },
+        {
+          "metric": "max",
+          "value": 17
+        },
+        {
+          "metric": "count",
+          "value": 4
+        }
+      ]
+    }
+  ]
+}
