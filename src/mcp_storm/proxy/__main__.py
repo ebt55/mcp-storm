@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
-import sys
 
 from .config import ProxyConfig
 from .pump import ProxyPump
@@ -20,14 +20,16 @@ def main(argv: list[str] | None = None) -> int:
     # --spawn-args must therefore be the LAST flag on the command line.
     parser.add_argument("--spawn-args", nargs=argparse.REMAINDER, help="argv of the real MCP server child")
     parser.add_argument("--server-name", help="logical server name for the ledger")
+    parser.add_argument("--spawn-cwd", help="working directory for the child server")
     args = parser.parse_args(argv)
 
     cfg = ProxyConfig.from_env()
-    if args.spawn_cmd or args.spawn_args or args.server_name:
+    if any((args.spawn_cmd, args.spawn_args, args.server_name, args.spawn_cwd)):
         cfg = cfg.with_overrides(
             target_cmd=args.spawn_cmd,
             target_args=args.spawn_args,
             server_name=args.server_name,
+            spawn_cwd=args.spawn_cwd,
         )
     if not cfg.target_cmd:
         parser.error("no spawn target: pass --spawn-cmd/--spawn-args or STORM_TARGET_CMD")
@@ -37,10 +39,15 @@ def main(argv: list[str] | None = None) -> int:
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        cwd=cfg.spawn_cwd or None,
     )
     pump = ProxyPump(cfg, child)
-    return pump.run()
+    rc = pump.run()
+    # Skip interpreter finalization: daemon pump threads still hold the stdin
+    # buffered-reader lock and would fatal-error at shutdown. All frames are
+    # flushed per write and the ledger is fsynced in Ledger.close().
+    os._exit(rc)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

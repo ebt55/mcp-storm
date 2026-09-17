@@ -76,3 +76,39 @@ the permanent correction log. Entries dated; day-1 falsification results live he
     blocks or structuredContent). Latency holds get their full delay as
     teardown grace; holds lost to hard kills are counted in
     `manifest.counters.latency_holds_lost_at_teardown`.
+
+## 2026-09-18 — real-server bring-up (§3.6, §5.2)
+
+12. **The official filesystem server is TypeScript-only.** The Python
+    `mcp-server-filesystem` package is gone from the registry (the guide's
+    `uvx mcp-server-filesystem@<pin>` is stale). Fix: the pinned npm package
+    `@modelcontextprotocol/server-filesystem@2025.7.1` is vendored under
+    `vendor/filesystem/` and spawned as `node <dist/index.js> <sandbox>` —
+    still a direct .exe invocation, no npx, no shell. Positional allowed-dir
+    args verified live. Its tool is `read_file` (not the old Python server's
+    `read_text_file`); task authoring and the offline fake server use the real
+    names. The TS server does NOT create parent directories on `write_file`.
+
+13. **The official sqlite server is archived and SDK-rotted.**
+    `mcp-server-sqlite@2025.4.25` crashes under the current mcp SDK
+    (`'Server' object has no attribute 'list_resources'`). Fix: its uvx
+    environment pins the era's SDK — `uvx --with mcp==1.9.4
+    mcp-server-sqlite@2025.4.25 --db-path <sandbox>/task.db`. `--db-path`
+    arg verified live.
+
+14. **Real TS filesystem server resolves relative tool paths against its own
+    cwd**, so the proxy takes `--spawn-cwd <sandbox>` (env `STORM_SPAWN_CWD`)
+    and the runner sets it to the run's sandbox; otherwise relative paths from
+    task prompts resolve into the repo and are denied by the allowed-dirs
+    check.
+
+15. **storm-ops `_meta` access (mcp 1.30 bundled FastMCP).** Inside tool
+    handlers `ctx.request_context.request` is None; the stamped idempotency key
+    is on `ctx.request_context.meta` (a pydantic Meta model, key in
+    `model_extra`). Proxy stamping itself verified byte-level on the wire.
+
+16. **Proxy shutdown uses `os._exit`.** Daemon pump threads hold the stdin
+    buffered-reader lock; normal interpreter finalization fatal-errors
+    (`_enter_buffered_busy`). All frames are flushed per write and the ledger
+    is fsynced in `Ledger.close()` before the exit, so skipping finalization
+    is safe and silences the fatal error.

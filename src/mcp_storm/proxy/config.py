@@ -44,6 +44,8 @@ class ProxyConfig:
     client_timeout_hint_s: float = DEFAULT_CLIENT_TIMEOUT_HINT_S
     hard_error_style: str = "iserror"  # "iserror" (default) | "jsonrpc" (-32603), §3.3
     latency_delay_s: float = DEFAULT_LATENCY_DELAY_S
+    spawn_cwd: str | None = None  # child working dir (real TS fs server resolves
+    # relative tool paths against its cwd, so the runner sets cwd = sandbox)
 
     def __post_init__(self) -> None:
         if self.mode not in MODES:
@@ -82,6 +84,7 @@ class ProxyConfig:
             client_timeout_hint_s=_env_float("STORM_CLIENT_TIMEOUT_HINT_S", DEFAULT_CLIENT_TIMEOUT_HINT_S),
             hard_error_style=_env("STORM_HARD_ERROR_STYLE", "iserror"),
             latency_delay_s=_env_float("STORM_LATENCY_DELAY_S", DEFAULT_LATENCY_DELAY_S),
+            spawn_cwd=_env("STORM_SPAWN_CWD") or None,
         )
 
     def with_overrides(
@@ -89,6 +92,7 @@ class ProxyConfig:
         target_cmd: str | None = None,
         target_args: list[str] | None = None,
         server_name: str | None = None,
+        spawn_cwd: str | None = None,
     ) -> ProxyConfig:
         return ProxyConfig(
             target_cmd=target_cmd or self.target_cmd,
@@ -104,4 +108,5 @@ class ProxyConfig:
             client_timeout_hint_s=self.client_timeout_hint_s,
             hard_error_style=self.hard_error_style,
             latency_delay_s=self.latency_delay_s,
+            spawn_cwd=spawn_cwd or self.spawn_cwd,
         )
