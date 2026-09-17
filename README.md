@@ -20,10 +20,15 @@ No measured runs exist yet (prereg locks Fri Oct 9 2026; no paid run before that
 
 | Piece | State |
 |---|---|
-| stdio JSON-RPC proxy (5 fault modes, ledger, idempotency stamps) | built; offline tests |
-| storm-ops server (escalate, append_ledger, dedupe-aware) | built; offline tests |
-| LangGraph supervisor (plan → act → evaluate) | built; offline FakeChatModel e2e |
-| 25 objectively-graded tasks + fixtures | built; grader golden 25/25 |
-| Matrix runner (manifest resume, spend breaker) | built; offline gate + fake-model dry runs |
-| Paid experiment matrix | blocked until `v0.1-prereg` (Fri Oct 9 2026) |
-| mcp-meter report/bench, vignette, QLoRA, pgvector, deploy | later (cut order: vignette → pgvector → deploy → post) |
+| stdio JSON-RPC proxy (5 fault modes, per-server ledgers, idempotency stamps) | **built; 4 blind adversarial review rounds passed** |
+| storm-ops server (escalate, durable append_ledger, dedupe-aware) | built; kill-resume dedupe verified |
+| LangGraph supervisor (plan → act → evaluate, AsyncSqliteSaver) | built; offline FakeChatModel e2e + real-server bring-up |
+| 25 objectively-graded tasks + strict graders | built; golden 25/25 pass + 25/25 corrupted-fail |
+| Matrix runner (offline gate, resume, 4 workers, spend breaker) | built; fake-model dry runs green; `storm selftest` green |
+| Paid experiment matrix | blocked until `v0.1-prereg` tag (Fri Oct 9 2026) — enforced in code |
+| mcp-meter bench, vignette, QLoRA, pgvector, deploy | later (cut order: vignette → pgvector → deploy → post) |
+
+Verification: `uv run pytest` (107 offline tests), `uv run storm selftest`,
+`uv run pytest -m realserver` (pinned real servers through the proxy).
+Bring-up deviations (official servers went TS-only / archived upstream) are
+recorded in `prereg/DEVIATIONS.md` ##1-22.
