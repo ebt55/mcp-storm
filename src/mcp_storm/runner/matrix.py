@@ -15,14 +15,13 @@ import asyncio
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from mcp_storm import prices
 from mcp_storm.paths import REPO_ROOT
-from mcp_storm.paths import runs_dir as default_runs_dir
-from mcp_storm.runner.worker import completed_run_ids, read_index, run_one
+from mcp_storm.runner.worker import completed_run_ids, run_one
 
 MODES = ("latency", "hard_error", "malformed", "partial", "dropped")
 DOSES = (0.05, 0.10, 0.20, 0.40, 0.70)
@@ -124,7 +123,7 @@ class MatrixLock:
         self.path = Path(runs) / ".matrix.lock"
         self._held = False
 
-    def __enter__(self) -> "MatrixLock":
+    def __enter__(self) -> MatrixLock:
         import os
 
         self.path.parent.mkdir(parents=True, exist_ok=True)

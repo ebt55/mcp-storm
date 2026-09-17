@@ -121,12 +121,12 @@ def test_enumerate_cells_shape():
 
 async def test_worker_node_attribution_through_graph(tmp_path: Path):
     """CP-D review F1: tokens must attribute to plan/evaluate, not '?'."""
-    from mcp_storm.agent.client import build_servers, connect_servers
-    from mcp_storm.agent.callbacks import MeterCallbackHandler
-    from mcp_storm.agent.graph import build_graph, invoke_config
-    from mcp_storm.grading.outcomes import load_refusal_phrases
-    from langchain_core.messages import AIMessage, HumanMessage
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from mcp_storm.agent.callbacks import MeterCallbackHandler
+    from mcp_storm.agent.client import build_servers, connect_servers
+    from mcp_storm.agent.graph import build_graph, invoke_config
     from mcp_storm.runner.sandbox import build_sandbox as bs
 
     task = load_task("fs-08")
@@ -200,9 +200,10 @@ async def test_worker_cancellation_not_recorded(tmp_path: Path):
 async def test_worker_timeout_harvests_messages(tmp_path: Path, monkeypatch):
     """CP-D review F6: timeout/loop runs keep their messages.json (QLoRA needs
     agent-side text exactly for fault-heavy runs)."""
-    from mcp_storm.runner import worker as wk
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
     from langchain_core.messages import AIMessage
+
+    from mcp_storm.runner import worker as wk
 
     monkeypatch.setattr(wk, "WALL_CAP_S", 6)
     task = load_task("fs-08")

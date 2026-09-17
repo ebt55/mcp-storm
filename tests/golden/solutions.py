@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 
 def _w(sandbox: Path, rel: str, content: str) -> None:

@@ -17,8 +17,9 @@ import os
 import shutil
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -182,7 +183,7 @@ async def run_one(
                 _kill_recorded_trees(run_directory)
     except GraphRecursionError:
         recursion = True
-    except asyncio.TimeoutError:
+    except TimeoutError:
         timed_out = True
     except asyncio.CancelledError:
         # Ctrl-C / drain: the run never finished -- no index row, resume retries

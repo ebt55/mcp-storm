@@ -13,7 +13,6 @@ import sys
 def kill_tree(pid: int) -> bool:
     if sys.platform != "win32":
         try:
-            import signal
 
             subprocess.run(["kill", "-9", str(pid)], check=False)
             return True
