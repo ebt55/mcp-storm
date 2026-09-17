@@ -20,18 +20,17 @@
       "text": "alpha"
     },
     {
-      "type": "file_contains",
+      "type": "file_has_line",
       "path": "notes/b.txt",
-      "text": "revenue: 42000"
+      "line": "revenue: 42000"
     },
     {
-      "type": "file_contains_all",
+      "type": "file_lines",
       "path": "notes/c.txt",
-      "texts": [
+      "lines": [
         "a.txt",
         "b.txt"
-      ],
-      "ordered": false
+      ]
     }
   ]
 }

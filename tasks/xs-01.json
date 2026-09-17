@@ -42,9 +42,9 @@
       ]
     },
     {
-      "type": "file_contains",
+      "type": "file_number",
       "path": "out/n.txt",
-      "text": "4"
+      "equals": 4
     }
   ]
 }

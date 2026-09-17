@@ -45,9 +45,27 @@
       ]
     },
     {
-      "type": "file_contains",
+      "type": "sql_rows",
+      "query": "SELECT id, name FROM metrics",
+      "rows": [
+        {
+          "id": 1,
+          "name": "errors"
+        },
+        {
+          "id": 2,
+          "name": "latency"
+        },
+        {
+          "id": 3,
+          "name": "uptime"
+        }
+      ]
+    },
+    {
+      "type": "file_number",
       "path": "out/total.txt",
-      "text": "346"
+      "equals": 346
     }
   ]
 }

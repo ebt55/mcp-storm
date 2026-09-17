@@ -2,10 +2,15 @@
 no LLM judging (§5.3).
 
 Check types (see scripts/gen_tasks.py for authoring):
-  file_exists / file_absent / file_contains / file_contains_all(ordered?) /
+  file_exists / file_absent /
+  file_contains (loose substring -- only for prose, never numeric answers) /
+  file_contains_all(ordered?) / file_has_line (exact stripped line) /
   file_lines (exact, order-sensitive, blank lines ignored) /
+  file_number (numeric equality: parses a number, compares by value -- numeric
+  answers must never be graded by substring; '14550' must NOT satisfy 4550) /
   file_json (JSON object containing the given field->value subset) /
-  table_exists / row_count / sql_rows (order-insensitive) / sql_scalar
+  table_exists (case-insensitive, like SQLite) / row_count /
+  sql_rows (order-insensitive multiset) / sql_scalar
 """
 
 from __future__ import annotations
@@ -24,12 +29,20 @@ def _read_text(sandbox: Path, path: str) -> str:
 
 
 def _rows(sandbox: Path, query: str) -> list[dict]:
-    conn = sqlite3.connect(sandbox / "task.db")
+    db = sandbox / "task.db"
+    if not db.exists():
+        raise sqlite3.OperationalError("no task.db in sandbox")
+    # read-only URI: grading must never create or mutate the sandbox
+    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
         return [dict(r) for r in conn.execute(query).fetchall()]
     finally:
         conn.close()
+
+
+def _parse_number(text: str) -> float | int:
+    return float(text.strip())
 
 
 def _run_check(sandbox: Path, check: dict) -> str | None:
@@ -45,6 +58,24 @@ def _run_check(sandbox: Path, check: dict) -> str | None:
         except FileNotFoundError as exc:
             return str(exc)
         return None if check["text"] in text else f"{check['path']} lacks {check['text']!r}"
+    if ctype == "file_has_line":
+        try:
+            text = _read_text(sandbox, check["path"])
+        except FileNotFoundError as exc:
+            return str(exc)
+        lines = [ln.strip() for ln in text.splitlines()]
+        return None if check["line"] in lines else f"{check['path']} has no line {check['line']!r}"
+    if ctype == "file_number":
+        try:
+            text = _read_text(sandbox, check["path"])
+        except FileNotFoundError as exc:
+            return str(exc)
+        try:
+            got = _parse_number(text)
+        except ValueError:
+            return f"{check['path']} is not a single number: {text.strip()!r}"
+        return (None if got == float(check["equals"])
+                else f"{check['path']} = {got} != {check['equals']}")
     if ctype == "file_contains_all":
         try:
             text = _read_text(sandbox, check["path"])
@@ -79,9 +110,13 @@ def _run_check(sandbox: Path, check: dict) -> str | None:
                 return f"{check['path']}[{key!r}] = {obj.get(key)!r} != {expected!r}"
         return None
     if ctype == "table_exists":
-        got = _rows(sandbox, "SELECT name FROM sqlite_master WHERE type='table'")
-        names = {r["name"] for r in got}
-        return None if check["table"] in names else f"table {check['table']} missing (have {sorted(names)})"
+        try:
+            got = _rows(sandbox, "SELECT name FROM sqlite_master WHERE type='table'")
+        except sqlite3.Error as exc:
+            return f"table_exists {check['table']}: {exc}"
+        names = {str(r["name"]).lower() for r in got}
+        return (None if check["table"].lower() in names
+                else f"table {check['table']} missing (have {sorted(names)})")
     if ctype == "row_count":
         try:
             got = _rows(sandbox, f"SELECT COUNT(*) AS n FROM {check['table']}")

@@ -25,6 +25,14 @@ def f_contains(path: str, text: str) -> dict:
     return {"type": "file_contains", "path": path, "text": text}
 
 
+def f_has_line(path: str, line: str) -> dict:
+    return {"type": "file_has_line", "path": path, "line": line}
+
+
+def f_number(path: str, equals) -> dict:
+    return {"type": "file_number", "path": path, "equals": equals}
+
+
 def f_contains_all(path: str, texts: list[str], ordered: bool = False) -> dict:
     return {"type": "file_contains_all", "path": path, "texts": texts, "ordered": ordered}
 
@@ -65,8 +73,8 @@ TASKS: list[dict] = [
         "expected_calls": ["create_directory", "write_file", "write_file", "write_file"],
         "grader": [
             f_contains("notes/a.txt", "alpha"),
-            f_contains("notes/b.txt", "revenue: 42000"),
-            f_contains_all("notes/c.txt", ["a.txt", "b.txt"]),
+            f_has_line("notes/b.txt", "revenue: 42000"),
+            f_lines("notes/c.txt", ["a.txt", "b.txt"]),
         ],
     },
     {
@@ -103,7 +111,7 @@ TASKS: list[dict] = [
         "fixture": {"files": {"inputs/q1.txt": "120\n", "inputs/q2.txt": "4550\n", "inputs/q3.txt": "980\n"}},
         "expected_calls": ["read_file", "read_file", "read_file", "create_directory", "write_file"],
         "grader": [
-            f_contains("out/max.txt", "4550"),
+            f_number("out/max.txt", 4550),
         ],
     },
     {
@@ -115,8 +123,8 @@ TASKS: list[dict] = [
                               "inputs/keep.txt": "stay\n"}},
         "expected_calls": ["create_directory", "move_file", "move_file"],
         "grader": [
-            f_contains("archive/app.log", "started"),
-            f_contains("archive/data.log", "rows=9"),
+            f_has_line("archive/app.log", "started"),
+            f_has_line("archive/data.log", "rows=9"),
             f_absent("inputs/app.log"),
             f_absent("inputs/data.log"),
             f_exists("inputs/keep.txt"),
@@ -131,7 +139,7 @@ TASKS: list[dict] = [
                               "The quick brown fox jumps over the lazy dog the end\n"}},
         "expected_calls": ["read_file", "create_directory", "write_file"],
         "grader": [
-            f_contains("out/words.txt", "9"),
+            f_number("out/words.txt", 9),
         ],
     },
     {
@@ -142,7 +150,7 @@ TASKS: list[dict] = [
         "fixture": {"files": {"inputs/matrix.txt": "1 2 3\n4 5 6\n7 8 9\n"}},
         "expected_calls": ["read_file", "create_directory", "write_file"],
         "grader": [
-            f_contains("out/sum.txt", "45"),
+            f_number("out/sum.txt", 45),
         ],
     },
     {
@@ -153,7 +161,7 @@ TASKS: list[dict] = [
         "fixture": {"files": {}},
         "expected_calls": ["create_directory", "write_file"],
         "grader": [
-            f_contains("out/reports/status.txt", "READY"),
+            f_lines("out/reports/status.txt", ["READY"]),
         ],
     },
     {
@@ -185,7 +193,7 @@ TASKS: list[dict] = [
                      [{"id": 1, "item": "bolt", "qty": 40},
                       {"id": 2, "item": "nut", "qty": 120},
                       {"id": 3, "item": "washer", "qty": 75}]),
-            f_contains("out/count.txt", "3"),
+            f_number("out/count.txt", 3),
         ],
     },
     {
@@ -205,7 +213,11 @@ TASKS: list[dict] = [
                      [{"name": "errors", "value": 7},
                       {"name": "latency", "value": 240},
                       {"name": "uptime", "value": 99}]),
-            f_contains("out/total.txt", "346"),
+            sql_rows("SELECT id, name FROM metrics",
+                     [{"id": 1, "name": "errors"},
+                      {"id": 2, "name": "latency"},
+                      {"id": 3, "name": "uptime"}]),
+            f_number("out/total.txt", 346),
         ],
     },
     {
@@ -220,7 +232,7 @@ TASKS: list[dict] = [
         ]},
         "expected_calls": ["read_query", "create_directory", "write_file"],
         "grader": [
-            f_contains("out/value.txt", "83"),
+            f_number("out/value.txt", 83),
         ],
     },
     {
@@ -237,7 +249,7 @@ TASKS: list[dict] = [
         ]},
         "expected_calls": ["read_query", "create_directory", "write_file"],
         "grader": [
-            f_contains("out/top.txt", "ann"),
+            f_lines("out/top.txt", ["ann"]),
         ],
     },
     {
@@ -274,7 +286,7 @@ TASKS: list[dict] = [
         "grader": [
             sql_rows("SELECT msg FROM alerts ORDER BY msg",
                      [{"msg": "disk full"}, {"msg": "timeout"}]),
-            f_contains("out/alert_count.txt", "2"),
+            f_number("out/alert_count.txt", 2),
         ],
     },
     {
@@ -294,7 +306,7 @@ TASKS: list[dict] = [
             sql_rows("SELECT name, salary FROM employees ORDER BY name",
                      [{"name": "ann", "salary": 110}, {"name": "ben", "salary": 150},
                       {"name": "cyd", "salary": 226}, {"name": "dee", "salary": 110}]),
-            f_contains("out/avg.txt", "149"),
+            f_number("out/avg.txt", 149),
         ],
     },
     {
@@ -332,7 +344,7 @@ TASKS: list[dict] = [
             sql_rows("SELECT name, city FROM people ORDER BY name",
                      [{"name": "ada", "city": "berlin"}, {"name": "bob", "city": "oslo"},
                       {"name": "cyd", "city": "lima"}, {"name": "dee", "city": "oslo"}]),
-            f_contains("out/n.txt", "4"),
+            f_number("out/n.txt", 4),
         ],
     },
     {
@@ -351,7 +363,7 @@ TASKS: list[dict] = [
             sql_rows("SELECT id, total FROM orders ORDER BY id",
                      [{"id": 1, "total": 50}, {"id": 3, "total": 70},
                       {"id": 4, "total": 20}]),
-            f_contains("out/fulfilled_total.txt", "140"),
+            f_number("out/fulfilled_total.txt", 140),
         ],
     },
     {
@@ -404,7 +416,7 @@ TASKS: list[dict] = [
         ]},
         "expected_calls": ["read_query", "create_directory", "write_file"],
         "grader": [
-            f_contains("out/done.txt", "2"),
+            f_number("out/done.txt", 2),
         ],
     },
     {
@@ -424,7 +436,7 @@ TASKS: list[dict] = [
                      [{"region": "east", "total": 180},
                       {"region": "north", "total": 190},
                       {"region": "west", "total": 250}]),
-            f_contains("out/best.txt", "west"),
+            f_lines("out/best.txt", ["west"]),
         ],
     },
     {

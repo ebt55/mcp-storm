@@ -103,3 +103,84 @@ def test_outcomes_classifier():
         refusal_phrases=["I'm sorry, but I can't"],
     )
     assert refusal["refusal"] is True and refusal["outcome"] == "wrong_answer"
+
+
+# ------------------------------------------------- strictness regressions (review)
+def _task(task_id: str) -> dict:
+    return next(t for t in TASKS if t["id"] == task_id)
+
+
+def _with_file(sandbox: Path, rel: str, content: str) -> Path:
+    target = sandbox / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return sandbox
+
+
+def test_numeric_superstrings_do_not_pass(tmp_path: Path):
+    """'14550' must NOT satisfy max=4550; '19' must not satisfy 9 (review F1)."""
+    for task_id, rel, wrong, right in [
+        ("fs-04", "out/max.txt", "14550\n", "4550\n"),
+        ("fs-06", "out/words.txt", "19\n", "9\n"),
+        ("fs-07", "out/sum.txt", "145\n", "45\n"),
+        ("db-03", "out/value.txt", "830\n", "83\n"),
+        ("db-07", "out/avg.txt", "1149\n", "149\n"),
+    ]:
+        task = _task(task_id)
+        base = _perfect_sandbox(tmp_path / "w", task)
+        (base / rel).write_text(wrong, encoding="utf-8")
+        assert not grade(task, base)["passed"], f"{task_id}: {wrong!r} wrongly passes"
+        (base / rel).write_text(right, encoding="utf-8")
+        assert grade(task, base)["passed"], f"{task_id}: {right!r} should pass"
+        # float formatting is fine for numeric answers
+        (base / rel).write_text(right.strip() + ".0\n", encoding="utf-8")
+        assert grade(task, base)["passed"], f"{task_id}: float form should pass"
+
+
+def test_hedged_single_answers_do_not_pass(tmp_path: Path):
+    """db-04: listing every name must not pass as 'top'; fs-08: NOT READY."""
+    task = _task("db-04")
+    base = _perfect_sandbox(tmp_path / "h1", task)
+    (base / "out/top.txt").write_text("ann\nben\ncyd\n", encoding="utf-8")
+    assert not grade(task, base)["passed"]
+    task = _task("xs-06")
+    base = _perfect_sandbox(tmp_path / "h2", task)
+    (base / "out/best.txt").write_text("east\nwest\nnorth\n", encoding="utf-8")
+    assert not grade(task, base)["passed"]
+    task = _task("fs-08")
+    base = _perfect_sandbox(tmp_path / "h3", task)
+    (base / "out/reports/status.txt").write_text("NOT READY\n", encoding="utf-8")
+    assert not grade(task, base)["passed"]
+    task = _task("fs-01")
+    base = _perfect_sandbox(tmp_path / "h4", task)
+    (base / "notes/b.txt").write_text("The revenue: 42000 dollars\n", encoding="utf-8")
+    assert not grade(task, base)["passed"], "exact-line requirement must be enforced"
+
+
+def test_db02_id_contract_graded(tmp_path: Path):
+    task = _task("db-02")
+    base = _perfect_sandbox(tmp_path / "idc", task)
+    import sqlite3
+
+    conn = sqlite3.connect(base / "task.db")
+    conn.execute("UPDATE metrics SET id = 99")
+    conn.commit()
+    conn.close()
+    assert not grade(task, base)["passed"], "id 1,2,3 in filename order is part of the task"
+
+
+def test_grading_does_not_create_task_db(tmp_path: Path):
+    task = _task("fs-01")
+    sandbox = build_sandbox(task, tmp_path / "ro" / "fs-01")
+    assert not (sandbox / "task.db").exists()
+    grade(task, sandbox)
+    assert not (sandbox / "task.db").exists(), "grader must not create task.db"
+    for t in TASKS:  # empty-sandbox grade across all tasks never raises
+        grade(t, build_sandbox(t, tmp_path / "empty" / t["id"]))
+
+
+def test_refusal_phrases_default_loads_from_prereg():
+    from mcp_storm.grading.outcomes import load_refusal_phrases
+
+    phrases = load_refusal_phrases()
+    assert phrases and any("can't" in p or "cannot" in p for p in phrases)

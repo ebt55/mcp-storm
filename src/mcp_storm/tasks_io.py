@@ -21,6 +21,10 @@ def load_tasks(tasks_dir: Path | None = None) -> list[dict]:
         if not task["grader"]:
             raise ValueError(f"{path}: empty grader")
         tasks.append(task)
+    ids = [t["id"] for t in tasks]
+    if len(ids) != len(set(ids)):
+        dupes = sorted({i for i in ids if ids.count(i) > 1})
+        raise ValueError(f"duplicate task ids: {dupes}")
     return tasks
 
 

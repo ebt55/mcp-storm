@@ -13,6 +13,19 @@ from typing import Any
 OUTCOMES = ("completed", "wrong_answer", "loop", "timeout", "crashed")
 
 
+def load_refusal_phrases() -> list[str]:
+    """The committed prereg list is the single source of truth (§5.4)."""
+    import json
+
+    from mcp_storm.paths import PREREG_DIR
+
+    data = json.loads((PREREG_DIR / "predictions.json").read_text(encoding="utf-8"))
+    phrases = data.get("refusal_phrases")
+    if not isinstance(phrases, list) or not phrases:
+        raise ValueError("prereg/predictions.json has no refusal_phrases list")
+    return [str(p) for p in phrases]
+
+
 def is_refusal(final_messages: list[Any], phrases: list[str]) -> bool:
     """Match the prereg refusal phrase list against the last assistant TEXT message."""
     last_text = None
@@ -45,6 +58,12 @@ def classify(
     refusal_phrases: list[str] | None = None,
 ) -> dict[str, Any]:
     from langgraph.errors import GraphRecursionError
+
+    if refusal_phrases is None:
+        try:
+            refusal_phrases = load_refusal_phrases()
+        except (OSError, ValueError):
+            refusal_phrases = []
 
     if exception is not None and not isinstance(exception, GraphRecursionError):
         outcome = "crashed"

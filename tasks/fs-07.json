@@ -16,9 +16,9 @@
   ],
   "grader": [
     {
-      "type": "file_contains",
+      "type": "file_number",
       "path": "out/sum.txt",
-      "text": "45"
+      "equals": 45
     }
   ]
 }

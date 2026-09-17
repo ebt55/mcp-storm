@@ -13,9 +13,11 @@
   ],
   "grader": [
     {
-      "type": "file_contains",
+      "type": "file_lines",
       "path": "out/reports/status.txt",
-      "text": "READY"
+      "lines": [
+        "READY"
+      ]
     }
   ]
 }

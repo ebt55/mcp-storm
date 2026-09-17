@@ -41,9 +41,9 @@
       ]
     },
     {
-      "type": "file_contains",
+      "type": "file_number",
       "path": "out/avg.txt",
-      "text": "149"
+      "equals": 149
     }
   ]
 }

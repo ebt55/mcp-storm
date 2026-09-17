@@ -40,9 +40,9 @@
       ]
     },
     {
-      "type": "file_contains",
+      "type": "file_number",
       "path": "out/fulfilled_total.txt",
-      "text": "140"
+      "equals": 140
     }
   ]
 }

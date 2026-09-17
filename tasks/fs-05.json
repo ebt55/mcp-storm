@@ -18,14 +18,14 @@
   ],
   "grader": [
     {
-      "type": "file_contains",
+      "type": "file_has_line",
       "path": "archive/app.log",
-      "text": "started"
+      "line": "started"
     },
     {
-      "type": "file_contains",
+      "type": "file_has_line",
       "path": "archive/data.log",
-      "text": "rows=9"
+      "line": "rows=9"
     },
     {
       "type": "file_absent",

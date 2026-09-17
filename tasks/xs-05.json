@@ -18,9 +18,9 @@
   ],
   "grader": [
     {
-      "type": "file_contains",
+      "type": "file_number",
       "path": "out/done.txt",
-      "text": "2"
+      "equals": 2
     }
   ]
 }

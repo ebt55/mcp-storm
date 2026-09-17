@@ -20,9 +20,11 @@
   ],
   "grader": [
     {
-      "type": "file_contains",
+      "type": "file_lines",
       "path": "out/top.txt",
-      "text": "ann"
+      "lines": [
+        "ann"
+      ]
     }
   ]
 }

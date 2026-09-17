@@ -44,9 +44,9 @@
       ]
     },
     {
-      "type": "file_contains",
+      "type": "file_number",
       "path": "out/count.txt",
-      "text": "3"
+      "equals": 3
     }
   ]
 }

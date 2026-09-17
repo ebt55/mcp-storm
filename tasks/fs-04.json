@@ -20,9 +20,9 @@
   ],
   "grader": [
     {
-      "type": "file_contains",
+      "type": "file_number",
       "path": "out/max.txt",
-      "text": "4550"
+      "equals": 4550
     }
   ]
 }
