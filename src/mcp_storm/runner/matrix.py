@@ -156,6 +156,9 @@ async def run_matrix(
     limit: int | None = None,
     workers: int = WORKERS,
     dry_run: bool = False,
+    modes: list[str] | None = None,
+    doses: list[float] | None = None,
+    replicates: list[int] | None = None,
 ) -> list[dict]:
     """Execute the matrix. model_factory(model_name) -> zero-arg factory so
     offline callers can inject FakeChatModels; paid runs use models.get_model."""
@@ -165,6 +168,12 @@ async def run_matrix(
     refusal_phrases = load_refusal_phrases_strict()
 
     cells = enumerate_cells(models, tasks)
+    if modes:
+        cells = [c for c in cells if c.mode in modes or (c.mode == "clean" and "clean" in modes)]
+    if doses:
+        cells = [c for c in cells if c.mode == "clean" or any(abs(c.dose - d) < 1e-9 for d in doses)]
+    if replicates:
+        cells = [c for c in cells if c.replicate in replicates]
     done = completed_run_ids(runs)
     pending = [c for c in cells if c.run_id not in done]
     if limit:

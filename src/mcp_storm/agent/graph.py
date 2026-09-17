@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -18,6 +19,26 @@ from langgraph.prebuilt import ToolNode
 from . import nodes
 
 RECURSION_LIMIT = 40
+
+
+def normalize_tool_specs(tools: list) -> list[dict]:
+    """OpenAI rejects function parameters that are not JSON-Schema objects --
+    the real TS filesystem server ships draft-07 schemas with no top-level
+    'type'. Normalize every converted spec to a proper object schema (harmless
+    for lenient providers). Execution still uses the ORIGINAL tools."""
+    specs = []
+    for tool in tools:
+        spec = convert_to_openai_tool(tool)
+        fn = spec.get("function", spec)
+        params = fn.get("parameters")
+        if not isinstance(params, dict) or params.get("type") != "object":
+            params = dict(params) if isinstance(params, dict) else {}
+            params.pop("$schema", None)
+            params.setdefault("properties", {})
+            params["type"] = "object"
+            fn["parameters"] = params
+        specs.append(spec)
+    return specs
 
 
 class StormState(TypedDict, total=False):
@@ -42,7 +63,7 @@ def build_graph(
     the raw model: a verdict must never carry tool_calls, and an evaluator that
     cannot call tools cannot smuggle actions past the router."""
     try:
-        bound = model.bind_tools(tools)
+        bound = model.bind_tools(normalize_tool_specs(tools))
     except NotImplementedError:  # fake chat models script tool_calls themselves
         bound = model
     builder = StateGraph(StormState)

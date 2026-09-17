@@ -179,3 +179,20 @@ the permanent correction log. Entries dated; day-1 falsification results live he
     ($0.075/$0.25 per M) — dose-0 + malformed slices only, never scored
     against prereg claims. Owner holds OpenAI data-sharing credits and an
     OpenRouter key; spend.jsonl records gross list cost as the ceiling.
+
+26. **Pre-pilot gate interpretation (written BEFORE pilot data, 2026-09-18).**
+    The Oct-22 pilot gate "dose-0 completion >=90%" exists to catch HARNESS
+    bugs. Model-capability failures are not harness bugs: the real filesystem
+    server's path validation rejects creating nested dirs whose parent chain
+    is missing (agents must create `out/` before `out/reports`; verified live
+    -- nano escalated on this once, mini/deepseek/glm adapted and completed).
+    If gpt-5-nano's dose-0 completion lands <90% WITHOUT any harness defect
+    (all failures graded, no crashes/timeouts caused by tooling), the verdict
+    is 'model-capability baseline', recorded here with the dose-0 rate; the
+    matrix proceeds because every metric is RELATIVE to that model's own
+    dose-0 cell. Harness-caused failures still trip the gate and block.
+
+27. **Fake-server fidelity fix (create_directory).** The offline fake created
+    parents recursively; the real TS server's create_directory fails when the
+    parent chain does not exist (validatePath realpath). Fake now matches
+    (offline e2e and matrix runs see identical filesystem semantics).

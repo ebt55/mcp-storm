@@ -71,6 +71,11 @@ def matrix_run(
     backend: str = typer.Option("real", "--backend", help="real | fake"),
     limit: int = typer.Option(None, "--limit", help="run at most N pending cells"),
     workers: int = typer.Option(4, "--workers"),
+    modes: str = typer.Option(None, "--modes",
+                              help="comma-separated modes (clean,latency,hard_error,"
+                                   "malformed,partial,dropped)"),
+    doses: str = typer.Option(None, "--doses", help="comma-separated doses (0.05,...)"),
+    replicates: str = typer.Option(None, "--replicates", help="comma-separated replicate numbers"),
 ) -> None:
     """Execute pending matrix cells (resume via runs/index.jsonl)."""
     from mcp_storm.runner.matrix import run_matrix
@@ -84,6 +89,9 @@ def matrix_run(
             backend=backend,
             limit=limit,
             workers=workers,
+            modes=[m.strip() for m in modes.split(",")] if modes else None,
+            doses=[float(d) for d in doses.split(",")] if doses else None,
+            replicates=[int(r) for r in replicates.split(",")] if replicates else None,
         )
 
     results = asyncio.run(go())

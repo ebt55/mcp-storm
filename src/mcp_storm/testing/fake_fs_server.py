@@ -95,7 +95,11 @@ def directory_tree(path: str) -> str:
 @mcp.tool()
 def create_directory(path: str) -> str:
     """Create a new directory or ensure a directory exists."""
-    _safe(path).mkdir(parents=True, exist_ok=True)
+    p = _safe(path)
+    if not p.parent.exists():
+        raise FileNotFoundError(  # real server: fs.mkdir is NOT recursive
+            f"Parent directory does not exist: {p.parent}")
+    p.mkdir(exist_ok=True)
     return f"Successfully created directory {path}"
 
 
