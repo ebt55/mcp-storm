@@ -54,7 +54,7 @@ def build(oracle_path: Path) -> FastMCP:
     oracle_path = Path(oracle_path)
 
     dedupe: dict[str, str] = {}  # idempotency_key -> original result text
-    total_appends = 0
+    total_appends = 0  # counts kind=="append" records only (restart-stable)
     if oracle_path.exists():
         for line in oracle_path.read_text(encoding="utf-8").splitlines():
             if line.strip():
@@ -62,7 +62,10 @@ def build(oracle_path: Path) -> FastMCP:
                     rec = json.loads(line)
                 except ValueError:
                     continue
-                total_appends += 1
+                if not isinstance(rec, dict):
+                    continue
+                if rec.get("kind") == "append":
+                    total_appends += 1
                 key = rec.get("idempotency_key")
                 if key:
                     dedupe[key] = rec.get("result", "")

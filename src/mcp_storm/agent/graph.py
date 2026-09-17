@@ -35,9 +35,18 @@ def build_graph(
     tools: list,
     checkpointer: BaseCheckpointSaver | None = None,
 ) -> Any:
-    """Compile the supervisor graph for one run (model bound in node closures)."""
+    """Compile the supervisor graph for one run (model bound in node closures).
+
+    The plan node uses the model WITH bound tools (real models can then emit
+    tool_calls; FakeChatModel scripts them regardless). The evaluate node uses
+    the raw model: a verdict must never carry tool_calls, and an evaluator that
+    cannot call tools cannot smuggle actions past the router."""
+    try:
+        bound = model.bind_tools(tools)
+    except NotImplementedError:  # fake chat models script tool_calls themselves
+        bound = model
     builder = StateGraph(StormState)
-    builder.add_node("plan", nodes.make_plan_node(model))
+    builder.add_node("plan", nodes.make_plan_node(bound))
     builder.add_node("act", ToolNode(tools, handle_tool_errors=True))
     builder.add_node("evaluate", nodes.make_evaluate_node(model))
     builder.add_edge(START, "plan")

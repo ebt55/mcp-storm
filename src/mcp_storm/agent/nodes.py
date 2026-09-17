@@ -10,12 +10,10 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AnyMessage
-from langgraph.prebuilt import ToolNode
+from langchain_core.messages import AIMessage, AnyMessage
 
 from mcp_storm.paths import TASKS_DIR
 
-EVALUATE_KEYWORDS = ("continue", "done", "escalate")
 NodeFn = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
@@ -30,6 +28,22 @@ def evaluate_prompt() -> str:
         "is needed), done (the task is complete), or escalate (the task cannot "
         "be completed; a human must take over)."
     )
+
+
+def parse_verdict(text: str) -> str:
+    """First word of the first line only; priority escalate > done > continue.
+    Substring matching anywhere in the reply would turn 'I cannot continue --
+    escalate' into 'continue' and 'abandoned' into 'done' (CP-B review)."""
+    first_line = text.strip().splitlines()[0] if text.strip() else ""
+    normalized = first_line.lower().replace(",", " ").replace(".", " ").replace("!", " ")
+    words = normalized.split()
+    if not words:
+        return "continue"
+    first = words[0]
+    for keyword in ("escalate", "done", "continue"):
+        if first.startswith(keyword):
+            return keyword
+    return "continue"
 
 
 def make_plan_node(model: BaseChatModel) -> NodeFn:
@@ -47,12 +61,19 @@ def make_plan_node(model: BaseChatModel) -> NodeFn:
 
 def make_evaluate_node(model: BaseChatModel) -> NodeFn:
     async def evaluate_node(state: dict[str, Any]) -> dict[str, Any]:
-        ai = await model.ainvoke([*state["messages"], ("system", evaluate_prompt())])
+        # raw (unbound) model: a verdict must never carry tool_calls
+        ai = await model.ainvoke([("system", evaluate_prompt()), *state["messages"]])
         text = ai.content if isinstance(ai.content, str) else str(ai.content)
-        lowered = text.lower()
-        verdict = next((k for k in EVALUATE_KEYWORDS if k in lowered), "continue")
-        update: dict[str, Any] = {"messages": [ai], "eval_verdict": verdict}
+        verdict = parse_verdict(text)
+        update: dict[str, Any] = {
+            "messages": [AIMessage(content=str(ai.content))],  # strip any tool_calls
+            "eval_verdict": verdict,
+        }
         if verdict == "escalate":
+            update["escalated"] = True
+        # the escalate TOOL is a side effect; surface it in state as well
+        if any(m.type == "tool" and getattr(m, "name", "") == "escalate"
+               for m in state["messages"]):
             update["escalated"] = True
         return update
 
@@ -66,7 +87,3 @@ def route_after_plan(state: dict[str, Any]) -> str:
 
 def route_after_evaluate(state: dict[str, Any]) -> str:
     return "plan" if state.get("eval_verdict", "continue") == "continue" else "__end__"
-
-
-def build_act_node(tools: list) -> ToolNode:
-    return ToolNode(tools, handle_tool_errors=True)

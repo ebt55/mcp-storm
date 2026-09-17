@@ -1,12 +1,15 @@
-"""Offline filesystem MCP server. Tool names/args mirror the REAL official
-server (TypeScript @modelcontextprotocol/server-filesystem 2025.7.1, verified
-at bring-up: read_file / write_file / ... -- NOT the archived Python server's
-read_text_file). Root is a positional CLI arg like the real server.
+"""Offline filesystem MCP server — FIDELITY CLONE of the real official server
+(TypeScript @modelcontextprotocol/server-filesystem 2025.7.1): same tool names,
+arg names (move_file uses source/destination), result strings, JSON
+directory_tree, and failure semantics (write_file does NOT create parent
+directories; access outside the root is denied). Verified against the vendored
+dist/index.js at bring-up (2026-09-18).
 
 Run: python -m mcp_storm.testing.fake_fs_server <root>"""
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -19,23 +22,22 @@ elif argv and not argv[0].startswith("-"):
     root = Path(argv[0]).resolve()
 else:
     root = Path.cwd()
-mcp = FastMCP("storm-fake-filesystem")
+mcp = FastMCP("secure-filesystem-server")
 
 
 def _safe(rel: str) -> Path:
     p = (root / rel).resolve()
     if not p.is_relative_to(root):
-        raise ValueError(f"Access denied - path outside allowed directories: {rel}")
+        raise ValueError(f"Access denied - path outside allowed directories: {p} not in {root}")
     return p
 
 
 @mcp.tool()
 def write_file(path: str, content: str) -> str:
-    """Create or overwrite a file with the provided content."""
-    p = _safe(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
+    """Create a new file or completely overwrite an existing file with new content."""
+    p = _safe(path)  # real server: parent dirs are NOT created implicitly
     p.write_text(content, encoding="utf-8")
-    return f"Successfully wrote {len(content)} characters to {path}"
+    return f"Successfully wrote to {path}"
 
 
 @mcp.tool()
@@ -43,7 +45,7 @@ def read_file(path: str) -> str:
     """Read the complete contents of a file."""
     p = _safe(path)
     if not p.is_file():
-        raise FileNotFoundError(f"File not found: {path}")
+        raise FileNotFoundError(f"Error reading file: File not found: {path}")
     return p.read_text(encoding="utf-8")
 
 
@@ -61,10 +63,10 @@ def read_multiple_files(paths: list[str]) -> str:
 
 @mcp.tool()
 def list_directory(path: str) -> str:
-    """List a directory's entries ([FILE]/[DIR] one per line)."""
+    """Get a detailed listing of files and directories."""
     p = _safe(path)
     if not p.is_dir():
-        raise FileNotFoundError(f"Path not found: {path}")
+        raise FileNotFoundError(f"Error listing directory: Path not found: {path}")
     lines = []
     for child in sorted(p.iterdir()):
         lines.append(f"[DIR] {child.name}" if child.is_dir() else f"[FILE] {child.name}")
@@ -73,54 +75,55 @@ def list_directory(path: str) -> str:
 
 @mcp.tool()
 def directory_tree(path: str) -> str:
-    """Recursive listing, indented."""
+    """Get a recursive tree view of files and directories as JSON."""
     p = _safe(path)
     if not p.is_dir():
-        raise FileNotFoundError(f"Path not found: {path}")
-    lines: list[str] = []
+        raise FileNotFoundError(f"Error getting directory tree: Path not found: {path}")
 
-    def walk(d: Path, depth: int) -> None:
+    def build(d: Path) -> list[dict]:
+        out: list[dict] = []
         for child in sorted(d.iterdir()):
-            lines.append("  " * depth + child.name + ("/" if child.is_dir() else ""))
             if child.is_dir():
-                walk(child, depth + 1)
+                out.append({"name": child.name, "type": "directory", "children": build(child)})
+            else:
+                out.append({"name": child.name, "type": "file"})
+        return out
 
-    walk(p, 0)
-    return "\n".join(lines) if lines else "(empty)"
+    return json.dumps(build(p), indent=2, ensure_ascii=False)
 
 
 @mcp.tool()
 def create_directory(path: str) -> str:
-    """Create a directory (and parents)."""
+    """Create a new directory or ensure a directory exists."""
     _safe(path).mkdir(parents=True, exist_ok=True)
     return f"Successfully created directory {path}"
 
 
 @mcp.tool()
-def move_file(source_path: str, destination_path: str) -> str:
-    """Move or rename a file or directory."""
-    src, dst = _safe(source_path), _safe(destination_path)
+def move_file(source: str, destination: str) -> str:
+    """Move a file or directory to a new location."""
+    src, dst = _safe(source), _safe(destination)
     if not src.exists():
-        raise FileNotFoundError(f"File not found: {source_path}")
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    src.replace(dst)
-    return f"Successfully moved {source_path} -> {destination_path}"
+        raise FileNotFoundError(f"Error moving file: File not found: {source}")
+    src.replace(dst)  # real server uses fs.rename: no implicit parent creation
+    return f"Successfully moved {source} to {destination}"
 
 
 @mcp.tool()
 def get_file_info(path: str) -> str:
-    """File metadata (size, created, modified, isDirectory)."""
+    """Retrieve detailed metadata (size, timestamps) about a file or directory."""
     import time
 
     p = _safe(path)
     if not p.exists():
-        raise FileNotFoundError(f"File not found: {path}")
+        raise FileNotFoundError(f"Error getting file info: File not found: {path}")
     st = p.stat()
     return (
         f"size: {st.st_size}\n"
         f"created: {time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(st.st_ctime))}\n"
         f"modified: {time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(st.st_mtime))}\n"
-        f"isDirectory: {p.is_dir()}"
+        f"isDirectory: {p.is_dir()}\n"
+        f"permissions: {oct(st.st_mode)[-3:]}"
     )
 
 
