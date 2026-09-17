@@ -17,7 +17,7 @@ def canonical_args(arguments: dict | None) -> str:
 
 
 def args_hash(tool: str, arguments: dict | None) -> str:
-    return hashlib.sha256(f"{tool}:{canonical_args(arguments)}".encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(f"{tool}:{canonical_args(arguments)}".encode()).hexdigest()[:16]
 
 
 def idempotency_key(run_id: str, tool: str, arguments: dict | None) -> str:

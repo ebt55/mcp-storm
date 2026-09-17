@@ -198,27 +198,17 @@ class ProxyPump:
         stdin = sys.stdin.buffer
         try:
             for raw in iter(stdin.readline, b""):
-                payload, eol = split_line(raw)
-                self._bump("frames_in")
-                out = raw
-                msg = parse_frame(payload)
-                if (
-                    msg is not None
-                    and msg.get("method") is not None
-                    and msg.get("id") is not None
-                    and msg["method"] == "tools/call"
-                ):
-                    params = msg.get("params") or {}
-                    if self.cfg.idem:
-                        params = idem.stamp(params, self.cfg.run_id)
-                        msg = {**msg, "params": params}
-                        out = dump_frame(msg) + b"\n"
-                    with self._pending_lock:
-                        self._pending[msg["id"]] = (str(msg["method"]), params, now_ns())
-                if self.child.stdin is not None:
-                    self.child.stdin.write(out)
-                    self.child.stdin.flush()
-                    self._bump("frames_forwarded_down")
+                try:
+                    self._forward_downstream(raw)
+                except Exception as exc:  # noqa: BLE001 - one bad frame must not kill the pump
+                    self.ledger.log(f"downstream frame error ({exc!r}); forwarding raw", tee=False)
+                    try:
+                        if self.child.stdin is not None:
+                            self.child.stdin.write(raw)
+                            self.child.stdin.flush()
+                            self._bump("frames_forwarded_down")
+                    except OSError:
+                        pass
         except OSError:
             pass
         finally:
@@ -227,6 +217,29 @@ class ProxyPump:
                     self.child.stdin.close()
                 except OSError:
                     pass
+
+    def _forward_downstream(self, raw: bytes) -> None:
+        payload, eol = split_line(raw)
+        self._bump("frames_in")
+        out = raw
+        msg = parse_frame(payload)
+        if (
+            msg is not None
+            and msg.get("method") is not None
+            and msg.get("id") is not None
+            and msg["method"] == "tools/call"
+        ):
+            params = msg.get("params") or {}
+            if self.cfg.idem:
+                params = idem.stamp(params, self.cfg.run_id)
+                msg = {**msg, "params": params}
+                out = dump_frame(msg) + b"\n"
+            with self._pending_lock:
+                self._pending[msg["id"]] = (str(msg["method"]), params, now_ns())
+        if self.child.stdin is not None:
+            self.child.stdin.write(out)
+            self.child.stdin.flush()
+            self._bump("frames_forwarded_down")
 
     def _pump_child_to_agent(self) -> None:
         assert self.child.stdout is not None
@@ -287,8 +300,11 @@ class ProxyPump:
             self.child.kill()
             self.child.wait(timeout=5)
         rc = self.child.returncode or 0
-        # Give in-flight latency-held envelopes a bounded grace period to land.
-        grace = min(self.cfg.latency_delay_s, 5.0) + 2.0
-        self._delayed_zero.wait(timeout=grace)
+        # Give in-flight latency-held envelopes their full delay (+ slack) to
+        # land: losing one loses both the frame AND its ledger row.
+        grace = self.cfg.latency_delay_s + 2.0
+        if not self._delayed_zero.wait(timeout=grace):
+            with self._counter_lock:
+                self.ledger.latency_holds_lost = self._outstanding_delayed
         self.ledger.close("child-exit")
         return rc

@@ -4,8 +4,8 @@ The fake server's `hang` tool never answers tools/call. With the real mcp SDK
 ClientSession and a read timeout, the client must RAISE (not hang) -- these tests
 pin the observed exception type and the elapsed bound. Observed behavior is
 recorded in prereg/DEVIATIONS.md; it defines what `dropped` means to the agent.
-The 45s production variant is `slow`-marked (run once manually; it passed at
-45.0x s with McpError on 2026-09-18).
+The 45s production variant is `slow`-marked and was run once manually:
+McpError at ~45-46s, within the 50s bound.
 """
 
 from __future__ import annotations
@@ -27,19 +27,18 @@ async def _run_call(params: StdioServerParameters, read_timeout_s: float, tool: 
     captured -- they are SDK cleanup noise, not the behavior under test."""
     outcome = ("NOT-RUN", 0.0)
     try:
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(
-                read, write, read_timeout_seconds=timedelta(seconds=read_timeout_s)
-            ) as session:
-                await session.initialize()
-                t0 = time.monotonic()
-                try:
-                    await session.call_tool(tool, arguments)
-                except BaseException as exc:  # noqa: BLE001 - observing the type is the point
-                    outcome = (time.monotonic() - t0, type(exc).__name__)
-                else:
-                    outcome = (time.monotonic() - t0, "NO-EXCEPTION")
-    except BaseException:  # noqa: BLE001 - teardown noise after a captured outcome
+        async with stdio_client(params) as (read, write), ClientSession(
+            read, write, read_timeout_seconds=timedelta(seconds=read_timeout_s)
+        ) as session:
+            await session.initialize()
+            t0 = time.monotonic()
+            try:
+                await session.call_tool(tool, arguments)
+            except BaseException as exc:  # noqa: BLE001 - observing the type is the point
+                outcome = (time.monotonic() - t0, type(exc).__name__)
+            else:
+                outcome = (time.monotonic() - t0, "NO-EXCEPTION")
+    except BaseException:  # noqa: BLE001, S110 - teardown noise after a captured outcome
         pass
     return outcome
 

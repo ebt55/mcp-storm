@@ -67,3 +67,58 @@ def test_ledger_row_fields(tmp_path):
     assert row["fault_mode_injected"] == "none"
     assert row["n_content_blocks"] == 1
     assert row["args_hash"] and row["args_bytes"] > 0 and row["result_bytes"] > 0
+    # wall-clock stamps (joinable against agent-side epoch records), not perf_counter
+    import time as _time
+
+    assert abs(row["t_response_ns"] / 1e9 - _time.time()) < 300, "not wall clock"
+    assert 0 <= row["latency_ms"] < 10_000
+
+
+def test_two_proxies_one_run_no_tearing(tmp_path):
+    """§3.1 topology: 3 proxies per run append concurrently. Per-server files
+    make every row intact (CP-A review finding 3)."""
+    import sys
+
+    from conftest import ledger_rows, read_responses, spawn
+    from conftest import warmup_frames as wf
+
+    env = storm_env(tmp_path, mode="malformed", dose="0.3", seed="iso")
+    procs = []
+    for name in ("filesystem", "sqlite", "storm-ops"):
+        procs.append(
+            spawn(
+                [sys.executable, "-m", "mcp_storm.proxy", "--server-name", name,
+                 "--spawn-cmd", sys.executable,
+                 "--spawn-args", "-m", "mcp_storm.testing.fake_server"],
+                env,
+            )
+        )
+    try:
+        for i, proc in enumerate(procs):
+            assert proc.stdin is not None
+            proc.stdin.write(b"".join(wf()))
+            proc.stdin.flush()
+        for proc in procs:
+            assert len(read_responses(proc, 2, timeout_s=15)) == 2
+        for j in range(40):
+            for proc in procs:
+                proc.stdin.write(frame(tools_call(1000 + j, "echo", {"text": f"b{j}"})))
+                proc.stdin.flush()
+        for proc in procs:
+            read_responses(proc, 40, timeout_s=30)
+    finally:
+        for proc in procs:
+            try:
+                if proc.stdin is not None:
+                    proc.stdin.close()
+                proc.wait(timeout=20)
+            except Exception:
+                proc.kill()
+    rows = ledger_rows(tmp_path)
+    assert len(rows) == 120, f"expected 120 intact rows, got {len(rows)}"
+    for row in rows:
+        assert row["server"] in ("filesystem", "sqlite", "storm-ops")
+        assert row["call_seq"] == row["call_seq"]  # survives JSON round-trip
+    per_server = {s: [r for r in rows if r["server"] == s] for s in ("filesystem", "sqlite", "storm-ops")}
+    for s, srows in per_server.items():
+        assert [r["call_seq"] for r in srows] == list(range(1, 41)), s

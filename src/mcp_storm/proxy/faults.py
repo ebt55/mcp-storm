@@ -8,6 +8,13 @@ With an empty seed the key string is byte-identical to the spec.
 
 All faults replace or delay the RESPONSE to a tools/call the child already
 answered. Requests are never modified (exception: idem.py stamps _meta, §3.2).
+
+Envelope hygiene (review day 1): every transform returns an envelope with
+EITHER `result` OR `error` -- never both. A child error envelope is converted
+to content-first form (its message text becomes the text block) before the
+content transform, so malformed/partial of an error stay valid isError-free
+responses, and the true payload never leaks via extra content blocks or
+structuredContent.
 """
 
 from __future__ import annotations
@@ -73,13 +80,16 @@ def apply_hard_error(resp: dict, server: str, call_seq: int, style: str = "iserr
     }
 
 
-def _first_text_block(result: dict) -> tuple[list[dict], int]:
-    """Content list copy + index of first {"type": "text"} block; -1 if none."""
+def _content_first(resp: dict) -> tuple[dict, list[dict]]:
+    """Return (result_dict, content_list) with any child error envelope folded
+    into a text block, and `error` stripped so transforms emit valid envelopes."""
+    result = dict(resp.get("result") or {})
     content = [dict(b) if isinstance(b, dict) else b for b in (result.get("content") or [])]
-    for i, block in enumerate(content):
-        if isinstance(block, dict) and block.get("type") == "text":
-            return content, i
-    return content, -1
+    if "error" in resp and not content:
+        err = resp.get("error") or {}
+        text = f"{err.get('code', -32603)}: {err.get('message', 'unknown error')}"
+        content = [{"type": "text", "text": text}]
+    return result, content
 
 
 def _truncate_mid_string(text: str, fraction: float = 0.6) -> str:
@@ -93,56 +103,58 @@ def apply_malformed(resp: dict, call_seq: int) -> dict:
     1 -> (b) only when the text parses as a JSON array, replace the array with its
           first object; else fall back to (a)
     2 -> (c) empty text ""
-    Valid envelope, isError explicitly false.
+    Valid envelope, isError explicitly false. Content is reduced to the single
+    corrupted text block (no leaks through sibling blocks/structuredContent).
     """
-    out = dict(resp)
-    result = dict(out.get("result") or {})
-    content, idx = _first_text_block(result)
-    if idx >= 0 and isinstance(content[idx].get("text"), str):
-        text = content[idx]["text"]
-        variant = call_seq
-        if variant == 2:
-            new_text = ""
-        elif variant == 1:
-            new_text = _truncate_mid_string(text)
-            try:
-                parsed = json.loads(text)
-            except (json.JSONDecodeError, ValueError):
-                parsed = None
-            if isinstance(parsed, list) and parsed:
-                new_text = json.dumps(parsed[0], separators=(",", ":"), ensure_ascii=False)
-        else:
-            new_text = _truncate_mid_string(text)
-        content[idx] = {**content[idx], "text": new_text}
-    result["content"] = content
-    result.pop("structuredContent", None)  # never leak the true value alongside
-    result["isError"] = False
-    out["result"] = result
-    return out
-
-
-def apply_partial(resp: dict, call_seq: int) -> dict:
-    """Keep ceil(50%) of a JSON array's items; else truncate single text at the last
-    word boundary <=60%. No error signal (§3.3)."""
-    out = dict(resp)
-    result = dict(out.get("result") or {})
-    content, idx = _first_text_block(result)
-    if idx >= 0 and isinstance(content[idx].get("text"), str):
-        text = content[idx]["text"]
-        new_text = None
+    out = {"jsonrpc": "2.0", "id": resp.get("id")}
+    _result, content = _content_first(resp)
+    variant = call_seq % 3
+    text = next(
+        (b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text"
+                 and isinstance(b.get("text"), str)),
+        "",
+    )
+    if variant == 2:
+        new_text = ""
+    elif variant == 1:
+        new_text = _truncate_mid_string(text)
         try:
             parsed = json.loads(text)
         except (json.JSONDecodeError, ValueError):
             parsed = None
-        if isinstance(parsed, list):
-            keep = math.ceil(len(parsed) / 2)
-            new_text = json.dumps(parsed[:keep], separators=(",", ":"), ensure_ascii=False)
-        else:
-            prefix = text[: math.floor(len(text) * 0.6)]
-            last_ws = max(prefix.rfind(" "), prefix.rfind("\n"), prefix.rfind("\t"))
-            new_text = prefix[:last_ws].rstrip() if last_ws > 0 else prefix
-        content[idx] = {**content[idx], "text": new_text}
-    result["content"] = content
-    result.pop("structuredContent", None)  # never leak the true value alongside
-    out["result"] = result
+        if isinstance(parsed, list) and parsed:
+            new_text = json.dumps(parsed[0], separators=(",", ":"), ensure_ascii=False)
+    else:
+        new_text = _truncate_mid_string(text)
+    out["result"] = {
+        "content": [{"type": "text", "text": new_text}],
+        "isError": False,
+    }
+    return out
+
+
+def apply_partial(resp: dict, call_seq: int) -> dict:
+    """Keep ceil(50%) of a JSON array's items; else truncate single text at the
+    last word boundary <=60%. No error signal (§3.3). Content reduced to the
+    single partial text block."""
+    out = {"jsonrpc": "2.0", "id": resp.get("id")}
+    _result, content = _content_first(resp)
+    text = next(
+        (b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text"
+                 and isinstance(b.get("text"), str)),
+        "",
+    )
+    new_text: str
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        parsed = None
+    if isinstance(parsed, list):
+        keep = math.ceil(len(parsed) / 2)
+        new_text = json.dumps(parsed[:keep], separators=(",", ":"), ensure_ascii=False)
+    else:
+        prefix = text[: math.floor(len(text) * 0.6)]
+        last_ws = max(prefix.rfind(" "), prefix.rfind("\n"), prefix.rfind("\t"))
+        new_text = prefix[:last_ws].rstrip() if last_ws > 0 else prefix
+    out["result"] = {"content": [{"type": "text", "text": new_text}]}
     return out

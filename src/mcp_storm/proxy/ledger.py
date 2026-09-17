@@ -1,9 +1,14 @@
 """Run ledger: NDJSON tool-call records + proxy log + per-proxy manifest (§3.4).
 
-A run has up to three proxy processes (one per server) appending to the SAME
-proxy.jsonl and proxy.log. Every write is a single os.write() on a descriptor
-opened with O_APPEND, which gives atomic-append semantics on Windows -- lines
-never interleave mid-record. fsync happens on proxy shutdown (run end).
+One file PER PROXY PROCESS (proxy.<server>.jsonl / proxy.<server>.log) inside
+runs/<run_id>/: Windows append writes are seek-then-write with NO cross-process
+atomicity (verified day 1: 3 proxies appending one shared file tore lines), so
+each process owns its file exclusively and readers merge + sort by
+t_request_ns. fsync happens on proxy shutdown (run end).
+
+Timestamps are WALL CLOCK (time.time_ns) -- they exist for temporal joins
+against agent-side records (§5.1 meter join, nearest timestamp +-2s). Latency
+is derived from the same clock source (valid: both stamps from this process).
 """
 
 from __future__ import annotations
@@ -36,7 +41,18 @@ REQUIRED_FIELDS = (
 
 
 def now_ns() -> int:
-    return time.perf_counter_ns()
+    return time.time_ns()
+
+
+def read_run_ledger(run_dir: Path) -> list[dict]:
+    """Merge every per-server ledger file, sorted oldest-request first."""
+    rows: list[dict] = []
+    for path in sorted(Path(run_dir).glob("proxy.*.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                rows.append(json.loads(line))
+    rows.sort(key=lambda r: (r.get("t_request_ns") or 0, r.get("server", "")))
+    return rows
 
 
 class Ledger:
@@ -56,24 +72,27 @@ class Ledger:
         self.frames_dropped = 0
         self.tool_calls = 0
         self.faulted_calls = 0
+        self.latency_holds_lost = 0  # holds still pending at teardown (rows never written)
         if self.dir is not None:
             self.dir.mkdir(parents=True, exist_ok=True)
+            tag = cfg.server_name.replace("/", "_")
             self._ledger_fd = os.open(
-                self.dir / "proxy.jsonl",
+                self.dir / f"proxy.{tag}.jsonl",
                 os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_BINARY,
             )
             self._log_fd = os.open(
-                self.dir / "proxy.log",
+                self.dir / f"proxy.{tag}.log",
                 os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_BINARY,
             )
-            self._manifest_path = self.dir / f"manifest.{cfg.server_name}.json"
+            self._manifest_path = self.dir / f"manifest.{tag}.json"
 
     # ------------------------------------------------------------------ logging
     def log(self, message: str, tee: bool = True) -> None:
-        """Append to proxy.log (a file -- never blocks). stderr is teed ONLY for
-        low-volume lifecycle events: if our stderr is an undrained pipe, teeing
-        per-line child logs would fill it, block this thread while it holds the
-        ledger lock, and deadlock the whole pump (found day 1, encoded here)."""
+        """Append to this proxy's log file (a file -- never blocks). stderr is
+        teed ONLY for low-volume lifecycle events: if our stderr is an undrained
+        pipe, teeing per-line child logs would fill it, block this thread while
+        it holds the ledger lock, and deadlock the whole pump (found day 1,
+        encoded here)."""
         line = f"[{self.cfg.server_name} {time.strftime('%H:%M:%S')}] {message}\n"
         stamped = line.encode("utf-8", "replace")
         with self._lock:
@@ -127,15 +146,15 @@ class Ledger:
                 "frames_dropped": self.frames_dropped,
                 "tool_calls": self.tool_calls,
                 "faulted_calls": self.faulted_calls,
+                "latency_holds_lost_at_teardown": self.latency_holds_lost,
                 "frames_agent_to_child_equal_forwarded": self.frames_in == self.frames_forwarded_down,
             },
             "exit_reason": exit_reason,
             "written_at": time.time(),
         }
-        with self._lock:
-            self._manifest_path.write_text(
-                json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
+        tmp = self._manifest_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, self._manifest_path)
 
     def close(self, exit_reason: str) -> None:
         self.write_manifest(exit_reason)

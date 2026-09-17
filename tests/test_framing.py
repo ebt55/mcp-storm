@@ -6,10 +6,7 @@ CRLF preserved, 1,000-message soak with zero lost frames.
 
 from __future__ import annotations
 
-import json
-import subprocess
 import sys
-import time
 from datetime import timedelta
 
 from conftest import (

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 
-import pytest
 from conftest import (
     frame,
-    initialize_request,
     ledger_rows,
     read_responses,
     spawn_proxy,
@@ -49,12 +48,21 @@ def _resp_with_text(text: str, id_: int = 7) -> dict:
 
 def test_malformed_variants():
     arr = json.dumps([{"id": 1}, {"id": 2}, {"id": 3}])
-    # call_seq % 3 == 1 and text parses as JSON array -> array replaced by first object
-    out = faults.apply_malformed(_resp_with_text(arr), call_seq=1)
-    assert json.loads(out["result"]["content"][0]["text"]) == {"id": 1}
-    assert out["result"]["isError"] is False
-    # call_seq % 3 == 1 but text is NOT an array -> fallback to 60% mid-string truncation
+    cut = arr[: math.floor(len(arr) * 0.6)]
     text = "0123456789abcdefghij"  # len 20 -> floor(12)
+    # cycle must be call_seq % 3 for ALL seq, not just 1..3 (CP-A review finding 1)
+    for seq in range(1, 10):
+        out = faults.apply_malformed(_resp_with_text(arr), call_seq=seq)
+        variant = seq % 3
+        got = out["result"]["content"][0]["text"]
+        if variant == 2:
+            assert got == "", f"seq={seq}"
+        elif variant == 1:
+            assert json.loads(got) == {"id": 1}, f"seq={seq}"
+        else:
+            assert got == cut, f"seq={seq}"
+        assert out["result"]["isError"] is False
+    # non-array text with variant 1 -> fallback to 60% mid-string truncation
     out = faults.apply_malformed(_resp_with_text(text), call_seq=1)
     assert out["result"]["content"][0]["text"] == text[:12]
     # call_seq % 3 == 0 -> truncate at 60% mid-string
@@ -63,6 +71,18 @@ def test_malformed_variants():
     # call_seq % 3 == 2 -> empty text
     out = faults.apply_malformed(_resp_with_text(text), call_seq=2)
     assert out["result"]["content"][0]["text"] == ""
+
+
+def test_transforms_on_jsonrpc_error_envelope():
+    """A child tools/call ERROR envelope must never become error+result both
+    (CP-A review finding 2): malformed/partial fold it into valid content form."""
+    err_resp = {"jsonrpc": "2.0", "id": 9, "error": {"code": -32602, "message": "Unknown tool: nope"}}
+    for transform in (faults.apply_malformed, faults.apply_partial):
+        for seq in (1, 2, 3, 4):
+            out = transform(err_resp, seq)
+            assert "error" not in out and "result" in out, f"{transform.__name__} seq={seq}"
+            assert out["result"].get("isError") is not True
+            assert isinstance(out["result"]["content"][0]["text"], str)
 
 
 def test_partial_variants():
@@ -76,6 +96,23 @@ def test_partial_variants():
     assert got.endswith("delta")
     assert len(got) <= int(len(text) * 0.6) + 1
     assert "isError" not in out["result"], "partial must carry no error signal"
+    # true value must not leak through sibling blocks or structuredContent
+    leaky = {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+            "content": [
+                {"type": "text", "text": arr},
+                {"type": "text", "text": "sibling truth"},
+            ],
+            "structuredContent": {"secret": True},
+        },
+    }
+    for transform in (faults.apply_malformed, faults.apply_partial):
+        out = transform(leaky, call_seq=1)
+        assert len(out["result"]["content"]) == 1
+        assert "secret" not in json.dumps(out)
+        assert "sibling truth" not in json.dumps(out)
 
 
 def test_hard_error_messages():
@@ -98,7 +135,6 @@ def _run_mode(tmp_path, mode: str, calls: list[tuple[str, dict]], dose: str = "1
     proc.stdin.flush()
     warm = read_responses(proc, 2)
     assert len(warm) == 2, f"handshake failed: {warm}"
-    ids = []
     for i, (tool, args) in enumerate(calls):
         proc.stdin.write(frame(tools_call(100 + i, tool, args)))
     proc.stdin.flush()

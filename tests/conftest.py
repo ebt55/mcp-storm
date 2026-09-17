@@ -102,8 +102,8 @@ def _line_queue(proc: subprocess.Popen):
         return existing
     q: queue.Queue[bytes | None] = queue.Queue()
     lines: list[bytes] = []
-    setattr(proc, "_storm_q", q)
-    setattr(proc, "_storm_lines", lines)
+    proc._storm_q = q
+    proc._storm_lines = lines
     assert proc.stdout is not None
 
     def _feed() -> None:
@@ -146,7 +146,7 @@ def exchange_and_collect(proc: subprocess.Popen, payload: bytes, n_responses: in
         proc.wait(timeout=15)
     except subprocess.TimeoutExpired:
         proc.kill()
-    return b"".join(getattr(proc, "_storm_lines"))
+    return b"".join(proc._storm_lines)
 
 
 def read_responses(proc: subprocess.Popen, count: int, timeout_s: float = 30.0) -> list[dict]:
@@ -178,10 +178,13 @@ def read_responses(proc: subprocess.Popen, count: int, timeout_s: float = 30.0) 
 
 
 def ledger_rows(tmp_path: Path, run_id: str = "test-run") -> list[dict]:
-    path = Path(tmp_path) / "runs" / run_id / "proxy.jsonl"
-    if not path.exists():
+    """All rows across per-server ledger files, oldest-request first."""
+    from mcp_storm.proxy.ledger import read_run_ledger
+
+    run_dir = Path(tmp_path) / "runs" / run_id
+    if not run_dir.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    return read_run_ledger(run_dir)
 
 
 def manifest(tmp_path: Path, server_name: str, run_id: str = "test-run") -> dict | None:

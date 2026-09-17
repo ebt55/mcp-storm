@@ -55,6 +55,10 @@ class ProxyConfig:
         if self.hard_error_style not in ("iserror", "jsonrpc"):
             msg = "STORM_HARD_ERROR_STYLE must be 'iserror' or 'jsonrpc'"
             raise ValueError(msg)
+        # ':' would collide keys in sha256(f"{run_id}:{task_id}:{call_seq}")
+        for name in ("run_id", "task_id", "seed"):
+            if ":" in getattr(self, name):
+                raise ValueError(f"STORM_{name.upper()} must not contain ':' (fault-key collisions)")
 
     @property
     def faulting(self) -> bool:

@@ -48,3 +48,31 @@ the permanent correction log. Entries dated; day-1 falsification results live he
 7. **`--spawn-args` parsing.** argparse `nargs="+"` cannot accept child argv
    starting with `-` (e.g. `python -m ...`); the proxy uses `argparse.REMAINDER`
    and `--spawn-args` must be the last flag. Documented in `--help`.
+
+8. **Per-server ledger files (adversarial review, 2026-09-18).** Windows
+   O_APPEND writes are seek-then-write with no cross-process atomicity (3
+   proxies appending one shared proxy.jsonl produced torn lines under load).
+   Each proxy process therefore writes `proxy.<server>.jsonl` /
+   `proxy.<server>.log` exclusively; readers merge + sort by `t_request_ns`
+   (`mcp_storm.proxy.ledger.read_run_ledger`). §3.4's single-file wording is
+   satisfied at the run-directory level.
+
+9. **Wall-clock ledger stamps (adversarial review).** `t_request_ns` /
+   `t_response_ns` / `t_child_ns` are `time.time_ns()` (epoch), not
+   `perf_counter_ns`, so §5.1's meter join (nearest timestamp ±2s) and any
+   post-hoc timeline work across artifacts.
+
+10. **Fault-key hygiene (adversarial review).** STORM_SEED extends the spec key
+    as `f"{run_id}:{task_id}:{call_seq}:{seed}"` (empty seed byte-identical to
+    spec); run_id/task_id/seed containing `:` are rejected at config load.
+    Known and accepted: the spec's key has no server term, so the three
+    per-server proxies of a run draw identically at equal call_seq (correlated
+    fault decisions across servers); this is the preregistered formula.
+
+11. **Envelope hygiene (adversarial review).** malformed/partial of a child
+    JSON-RPC error envelope fold the error message into the text block and emit
+    a content-only envelope (never `error`+`result` both); both transforms
+    reduce content to the single corrupted text block (no leak via sibling
+    blocks or structuredContent). Latency holds get their full delay as
+    teardown grace; holds lost to hard kills are counted in
+    `manifest.counters.latency_holds_lost_at_teardown`.
