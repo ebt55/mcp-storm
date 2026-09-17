@@ -66,8 +66,8 @@ def _git_sha() -> str:
 
 def git_tag_exists(tag: str) -> bool:
     proc = subprocess.run(["git", "tag", "-l", tag], capture_output=True, text=True,
-                          shell=False, cwd=str(Path(__file).parents[2]))
-    return proc.stdout.strip() == tag
+                          shell=False, cwd=str(REPO_ROOT))
+    return proc.returncode == 0 and proc.stdout.strip() == tag
 
 
 def _working_tree_dirty() -> bool:
