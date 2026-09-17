@@ -196,3 +196,17 @@ the permanent correction log. Entries dated; day-1 falsification results live he
     parents recursively; the real TS server's create_directory fails when the
     parent chain does not exist (validatePath realpath). Fake now matches
     (offline e2e and matrix runs see identical filesystem semantics).
+
+28. **Harness fix after pilot (§7 harness-bug exclusion invoked; pilot cells
+    excluded and re-run).** Pilot evidence: gpt-5-mini completed every tool
+    step of db-01 (table, 3 rows, verified count, directory) and db-02 (all
+    inputs read) and the evaluator then answered "done" BEFORE the required
+    output artifact existed -> wrong_answer. Same signature drove gpt-5-nano's
+    17% dose-0 completion. Root cause: the evaluator prompt did not require
+    artifact verification before "done" -- an authoring defect in the harness
+    (the supervisor design's evaluate node, §5.1), not a preregistered
+    variable. Fix: evaluate prompt now requires verifying every required
+    artifact before answering done (graph code only; tasks/PROMPT.md and the
+    task set untouched). Pilot cells (nano 75 + mini 5) excluded via
+    scripts/exclude_runs.py and re-run from scratch. Nano's low completion may
+    persist (capability floor, #26) -- the re-run separates the two causes.

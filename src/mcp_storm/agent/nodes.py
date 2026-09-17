@@ -26,7 +26,10 @@ def evaluate_prompt() -> str:
         "You are the supervisor's evaluator. Look at the conversation so far and "
         "reply with exactly one word on the first line: continue (more tool work "
         "is needed), done (the task is complete), or escalate (the task cannot "
-        "be completed; a human must take over)."
+        "be completed; a human must take over). Before answering done, check the "
+        "task statement and verify that EVERY required file, table, or row has "
+        "actually been produced in the conversation -- an almost-finished plan "
+        "is continue, not done."
     )
 
 
