@@ -124,6 +124,26 @@ class Ledger:
             os.write(self._ledger_fd, data)
 
     # ----------------------------------------------------------------- manifest
+    def write_startup_manifest(self, child_pid: int) -> None:
+        """Written the moment the proxy spawns its child, BEFORE any traffic:
+        a hard-killed proxy never reaches close(), and the runner's watchdog
+        (taskkill /F /T by proxy_pid) needs the pid on disk immediately."""
+        if self._manifest_path is None:
+            return
+        manifest = {
+            "run_id": self.cfg.run_id,
+            "task_id": self.cfg.task_id,
+            "server": self.cfg.server_name,
+            "proxy_pid": os.getpid(),
+            "child_pid": child_pid,
+            "started": True,
+            "mode": self.cfg.mode,
+            "dose": self.cfg.dose,
+        }
+        tmp = self._manifest_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, self._manifest_path)
+
     def write_manifest(self, exit_reason: str) -> None:
         if self._manifest_path is None:
             return

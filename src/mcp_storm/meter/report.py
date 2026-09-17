@@ -43,6 +43,7 @@ def join_meter_to_ledger(meter: dict, ledger_rows: list[dict]) -> dict[str, Any]
 
     llm_calls = meter.get("totals", {}).get("llm_calls", 0)
     tool_calls = len(rows)
+    zero_tool_run = tool_calls == 0  # a no-tool wrong_answer is not a join failure
     window_violations = []
     llm_times = sorted(c["ts"] for c in meter.get("calls", []))
     if llm_times:
@@ -54,14 +55,16 @@ def join_meter_to_ledger(meter: dict, ledger_rows: list[dict]) -> dict[str, Any]
                 window_violations.append({"tool": row["tool"], "call_seq": row.get("call_seq")})
     denom = max(llm_calls, tool_calls, 1)
     mismatch = abs(llm_calls - tool_calls) / denom
+    volume_ok = True if zero_tool_run else mismatch <= JOIN_MISMATCH_LIMIT
     joined = {
         "run_id": run_id,
         "per_tool": per_tool,
         "tool_calls": tool_calls,
         "llm_calls": llm_calls,
+        "zero_tool_run": zero_tool_run,
         "volume_mismatch": round(mismatch, 4),
         "window_violations": window_violations,
-        "join_ok": mismatch <= JOIN_MISMATCH_LIMIT and len(window_violations) == 0,
+        "join_ok": volume_ok and len(window_violations) == 0,
     }
     return joined
 

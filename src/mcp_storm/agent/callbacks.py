@@ -32,7 +32,13 @@ class MeterCallbackHandler(AsyncCallbackHandler):
                 usage = getattr(gens[0].message, "usage_metadata", None) if gens else None
             except (AttributeError, IndexError, TypeError):
                 usage = None
-        node = (metadata or {}).get("langgraph_node") or (metadata or {}).get("tags", ["?"])[0]
+        node = "?"
+        for tag in tags or []:
+            if tag.startswith("storm-node:"):
+                node = tag.split(":", 1)[1]
+                break
+        if node == "?":
+            node = (metadata or {}).get("langgraph_node") or "?"
         self.calls.append(
             {
                 "ts": time.time(),

@@ -53,7 +53,12 @@ def make_plan_node(model: BaseChatModel) -> NodeFn:
             steer = "Produce a short plan, then act using the tools."
         else:
             steer = "Continue executing your plan with the tools."
-        ai = await model.ainvoke([("system", system_prompt() + "\n\n" + steer), *messages])
+        # storm-node tags propagate to inherited callbacks (metadata does not
+        # reach handlers attached at the graph level in langgraph 1.2)
+        ai = await model.ainvoke(
+            [("system", system_prompt() + "\n\n" + steer), *messages],
+            config={"tags": ["storm-node:plan"]},
+        )
         return {"messages": [ai], "step_count": state.get("step_count", 0) + 1}
 
     return plan_node
@@ -62,7 +67,10 @@ def make_plan_node(model: BaseChatModel) -> NodeFn:
 def make_evaluate_node(model: BaseChatModel) -> NodeFn:
     async def evaluate_node(state: dict[str, Any]) -> dict[str, Any]:
         # raw (unbound) model: a verdict must never carry tool_calls
-        ai = await model.ainvoke([("system", evaluate_prompt()), *state["messages"]])
+        ai = await model.ainvoke(
+            [("system", evaluate_prompt()), *state["messages"]],
+            config={"tags": ["storm-node:evaluate"]},
+        )
         text = ai.content if isinstance(ai.content, str) else str(ai.content)
         verdict = parse_verdict(text)
         update: dict[str, Any] = {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -72,6 +73,7 @@ def test_matrix_gate_refusals(tmp_path: Path):
 def test_paid_backend_requires_prereg_tag(tmp_path: Path, monkeypatch):
     _write_gate(tmp_path / "runs")
     monkeypatch.setattr(mx, "_git_sha", lambda: "deadbeef")
+    monkeypatch.setattr(mx, "_working_tree_dirty", lambda: False)
     monkeypatch.setattr(mx, "git_tag_exists", lambda tag: False)
     with pytest.raises(RuntimeError, match="prereg law"):
         import asyncio
@@ -88,6 +90,7 @@ async def test_matrix_dry_run_resume(tmp_path: Path, monkeypatch):
     _write_gate(runs)
     monkeypatch.setattr(mx, "_git_sha", lambda: "deadbeef")
     monkeypatch.setattr(mx, "git_tag_exists", lambda tag: True)
+    monkeypatch.setattr(mx, "_working_tree_dirty", lambda: False)
     tasks = load_tasks()[:2]
     results = await mx.run_matrix(
         models=["fake-model"], tasks=tasks, runs=runs, backend="fake",
@@ -114,3 +117,126 @@ def test_enumerate_cells_shape():
     assert len(clean) == 2 and all(c.dose == 0.0 for c in clean)
     run_ids = {c.run_id for c in cells}
     assert len(run_ids) == len(cells), "run ids must be unique"
+
+
+async def test_worker_node_attribution_through_graph(tmp_path: Path):
+    """CP-D review F1: tokens must attribute to plan/evaluate, not '?'."""
+    from mcp_storm.agent.client import build_servers, connect_servers
+    from mcp_storm.agent.callbacks import MeterCallbackHandler
+    from mcp_storm.agent.graph import build_graph, invoke_config
+    from mcp_storm.grading.outcomes import load_refusal_phrases
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from mcp_storm.runner.sandbox import build_sandbox as bs
+
+    task = load_task("fs-08")
+    sandbox = bs(task, tmp_path / "sb")
+    servers = build_servers("fake", sandbox, run_env={
+        "STORM_RUN_ID": "node-attr", "STORM_TASK_ID": task["id"],
+        "STORM_LEDGER_DIR": str(tmp_path / "runs" / "node-attr")})
+    for name in servers:
+        servers[name]["session_kwargs"]["read_timeout_seconds"] = timedelta(seconds=10)
+    stack, tools, _ = await connect_servers(servers)
+    try:
+        model = GenericFakeChatModel(messages=iter([
+            AIMessage(content="no tools needed", usage_metadata={
+                "input_tokens": 10, "output_tokens": 2, "total_tokens": 12}),
+            AIMessage(content="done", usage_metadata={
+                "input_tokens": 20, "output_tokens": 1, "total_tokens": 21}),
+            AIMessage(content="done", usage_metadata={
+                "input_tokens": 30, "output_tokens": 1, "total_tokens": 31}),
+        ]))
+        graph = build_graph(model, tools)
+        meter = MeterCallbackHandler(run_id="node-attr", model="fake")
+        conf = invoke_config("node-attr", task["id"], "t1")
+        conf["callbacks"] = [meter]
+        await graph.ainvoke({"messages": [HumanMessage(content=task["prompt"])]},
+                            config=conf)
+        summary = meter.summary()
+        nodes = set(summary["per_node"])
+        assert nodes == {"plan", "evaluate"}, f"attribution broken: {nodes}"
+        assert "?" not in summary["per_node"]
+    finally:
+        await stack.aclose()
+
+
+async def test_worker_cancellation_not_recorded(tmp_path: Path):
+    """CP-D review F3: Ctrl-C drain must not burn a run as crashed."""
+    import asyncio
+
+    task = load_task("fs-08")
+
+    # latency mode dose 1.0: every tool call is held 30s, so the run is still
+    # mid-flight when cancellation lands at 5s
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    def slow_factory():
+        return GenericFakeChatModel(messages=iter([
+            AIMessage(content="", tool_calls=[{
+                "name": "create_directory", "args": {"path": "out/reports"},
+                "id": "c1", "type": "tool_call"}]),
+            AIMessage(content="continue"),
+        ]))
+
+    async def cancel_soon():
+        await asyncio.sleep(5)
+        raise asyncio.CancelledError
+
+    runs = tmp_path / "runs"
+    try:
+        await asyncio.gather(
+            run_one(run_id="cancel-run", task=task, model_name="fake",
+                    model_factory=slow_factory, mode="latency", dose=1.0,
+                    seed="s", runs_dir=runs, backend="fake"),
+            cancel_soon(),
+        )
+    except asyncio.CancelledError:
+        pass
+    assert read_index(runs) == [], "cancelled run must not be recorded"
+    assert completed_run_ids(runs) == set()
+
+
+async def test_worker_timeout_harvests_messages(tmp_path: Path, monkeypatch):
+    """CP-D review F6: timeout/loop runs keep their messages.json (QLoRA needs
+    agent-side text exactly for fault-heavy runs)."""
+    from mcp_storm.runner import worker as wk
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    monkeypatch.setattr(wk, "WALL_CAP_S", 6)
+    task = load_task("fs-08")
+
+    def slow_factory():
+        return GenericFakeChatModel(messages=iter([
+            AIMessage(content="", tool_calls=[{
+                "name": "create_directory", "args": {"path": "out/reports"},
+                "id": "c1", "type": "tool_call"}]),
+            AIMessage(content="continue"),
+            AIMessage(content="still working"),
+            AIMessage(content="continue"),
+        ]))
+
+    runs = tmp_path / "runs"
+    record = await wk.run_one(
+        run_id="timeout-run", task=task, model_name="fake",
+        model_factory=slow_factory, mode="latency", dose=1.0,
+        seed="s", runs_dir=runs, backend="fake",
+    )
+    # latency fault with 30s hold vs 6s cap -> the tool call times out -> loop/timeout
+    assert record["outcome"] in {"timeout", "loop", "wrong_answer"}, record["outcome"]
+    msgs = json.loads((runs / "timeout-run" / "messages.json").read_text(encoding="utf-8"))
+    assert msgs, "messages.json must be harvested from the checkpointer"
+    assert msgs[0]["role"] == "human"
+
+
+def test_read_index_tolerates_torn_tail(tmp_path: Path):
+    from mcp_storm.runner.worker import _append_index
+
+    runs = tmp_path / "runs"
+    runs.mkdir(parents=True)
+    _append_index(runs, {"run_id": "ok-1", "outcome": "completed"})
+    with open(runs / "index.jsonl", "ab") as fh:
+        fh.write(b'{"run_id": "tor')  # crash mid-write
+    records = read_index(runs)
+    assert [r["run_id"] for r in records] == ["ok-1"]

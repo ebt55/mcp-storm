@@ -1,9 +1,12 @@
 """Worker: execute ONE matrix cell run end-to-end (BUILD-GUIDE §6.3).
 
-Per run: fresh sandbox -> persistent proxy sessions -> AsyncSqliteSaver
-checkpointer (one sqlite file per run) -> ainvoke under the 600s wall cap ->
-grade -> classify -> dump messages.json + meter.json + manifest.json -> append
-runs/index.jsonl. Timeouts kill the recorded process trees before teardown.
+Per run: WIPE the run dir (re-runs start from nothing) -> fresh sandbox ->
+persistent proxy sessions -> AsyncSqliteSaver checkpointer (one sqlite file per
+run) -> ainvoke under the 600s wall cap -> grade -> classify -> dump
+messages.json (harvested from the checkpointer if the run died) + meter.json +
+manifest.json -> append runs/index.jsonl. Timeouts/crashes kill the recorded
+process trees. Cancellation (Ctrl-C drain) raises through: it is not a dataset
+row and resume must retry it.
 """
 
 from __future__ import annotations
@@ -11,11 +14,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, Callable
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.errors import GraphRecursionError
 
@@ -23,7 +28,7 @@ from mcp_storm.agent.callbacks import MeterCallbackHandler
 from mcp_storm.agent.client import build_servers, connect_servers
 from mcp_storm.agent.graph import build_graph, invoke_config
 from mcp_storm.grading.grader import grade
-from mcp_storm.grading.outcomes import classify, load_refusal_phrases
+from mcp_storm.grading.outcomes import classify
 from mcp_storm.paths import REPO_ROOT
 from mcp_storm.runner.sandbox import build_sandbox
 
@@ -44,8 +49,9 @@ def dump_messages(messages: list, path: Path) -> None:
         tool_calls = getattr(m, "tool_calls", None)
         if tool_calls:
             entry["tool_calls"] = [
-                {"name": tc.get("name"), "args": json.dumps(tc.get("args", {}),
-                                                             ensure_ascii=False, default=str)[:500]}
+                {"name": tc.get("name"),
+                 "args": json.dumps(tc.get("args", {}), ensure_ascii=False,
+                                    default=str)[:500]}
                 for tc in tool_calls
             ]
         if getattr(m, "status", None):
@@ -57,6 +63,8 @@ def dump_messages(messages: list, path: Path) -> None:
 
 
 def _kill_recorded_trees(run_directory: Path) -> None:
+    """Kill every proxy tree the run spawned. Startup manifests exist from the
+    moment each proxy spawned its child, so hard-killed proxies are found too."""
     from mcp_storm.runner.watchdog import kill_tree
 
     for manifest_path in Path(run_directory).glob("manifest.*.json"):
@@ -64,9 +72,30 @@ def _kill_recorded_trees(run_directory: Path) -> None:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        pid = manifest.get("proxy_pid")
-        if pid:
-            kill_tree(int(pid))
+        for key in ("proxy_pid", "child_pid"):
+            pid = manifest.get(key)
+            if pid:
+                kill_tree(int(pid))
+
+
+def _git_sha() -> str:
+    try:
+        proc = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                              text=True, shell=False, cwd=str(REPO_ROOT))
+        return proc.stdout.strip() if proc.returncode == 0 else "unknown"
+    except OSError:
+        return "unknown"
+
+
+async def _harvest_messages(graph, config: dict) -> list:
+    """Timeout/loop/crash runs still have full history in the checkpointer;
+    the QLoRA task needs agent-side text precisely for fault-heavy runs."""
+    try:
+        state = await asyncio.wait_for(graph.aget_state(config), timeout=15)
+        values = getattr(state, "values", None) or {}
+        return list(values.get("messages", []))
+    except Exception:  # noqa: BLE001 - best effort, never blocks the record
+        return []
 
 
 async def run_one(
@@ -80,15 +109,20 @@ async def run_one(
     seed: str,
     runs_dir: Path,
     backend: str = "fake",
+    refusal_phrases: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Execute one run and return its index record. Raises nothing the matrix
-    can't survive: crashes become outcome=crashed records."""
+    """Execute one run and return its index record. Cancellation propagates
+    (CancelledError); every other failure becomes outcome=crashed data."""
     from mcp_storm import prices
     from mcp_storm.proxy.ledger import read_run_ledger
 
     run_directory = Path(runs_dir) / run_id
+    if run_directory.exists():
+        # A re-run of the same run_id (§7 harness-bug exclusion) starts from
+        # nothing: inherited checkpoints poison the thread and leftover
+        # artifacts corrupt the grade.
+        shutil.rmtree(run_directory)
     run_directory.mkdir(parents=True, exist_ok=True)
-    sandbox = build_sandbox(task, run_directory / "sandboxes" / task["id"])
     started = time.time()
 
     meter = MeterCallbackHandler(run_id=run_id, model=model_name)
@@ -102,9 +136,12 @@ async def run_one(
     recursion = False
     escalated = False
     final_messages: list = []
-    outcome_state: dict = {}
+    graph = None
+    invoke_conf: dict | None = None
+    sandbox_dir = run_directory / "sandboxes" / task["id"]
 
     try:
+        sandbox = build_sandbox(task, sandbox_dir)
         servers = build_servers(
             backend, sandbox,
             run_env={
@@ -122,35 +159,49 @@ async def run_one(
             saver_ctx = AsyncSqliteSaver.from_conn_string(str(run_directory / "checkpoints.db"))
             saver = await stack.enter_async_context(saver_ctx)
             graph = build_graph(model, tools, checkpointer=saver)
-            config = invoke_config(run_id, task["id"], thread_id=f"{run_id}-thread")
-            config["callbacks"] = [meter]
+            invoke_conf = invoke_config(run_id, task["id"], thread_id=f"{run_id}-thread")
+            invoke_conf["callbacks"] = [meter]
             final_state = await asyncio.wait_for(
                 graph.ainvoke(
                     {"messages": [HumanMessage(content=task["prompt"])],
                      "run_id": run_id, "task_id": task["id"]},
-                    config=config,
+                    config=invoke_conf,
                 ),
                 timeout=WALL_CAP_S,
             )
             final_messages = final_state.get("messages", [])
             escalated = bool(final_state.get("escalated"))
         finally:
+            # harvest BEFORE closing the stack: the checkpointer saver lives
+            # inside it, and timeout/loop/crash runs still need their messages
+            if not final_messages and graph is not None and invoke_conf is not None:
+                final_messages = await _harvest_messages(graph, invoke_conf)
             try:  # bounded teardown: hung sessions must not outlive the cap
                 await asyncio.wait_for(stack.aclose(), timeout=30)
-            except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+            except Exception:  # noqa: BLE001
                 _kill_recorded_trees(run_directory)
     except GraphRecursionError:
         recursion = True
     except asyncio.TimeoutError:
         timed_out = True
+    except asyncio.CancelledError:
+        # Ctrl-C / drain: the run never finished -- no index row, resume retries
+        _kill_recorded_trees(run_directory)
+        raise
     except BaseException as exc:  # noqa: BLE001 - crashes are data, not failures
         exception = exc
     finally:
         if timed_out or exception is not None:
             _kill_recorded_trees(run_directory)
 
-    grader_result = grade(task, sandbox)
-    refusal_phrases = load_refusal_phrases()
+    grader_result = grade(task, sandbox_dir)
+    if refusal_phrases is None:
+        from mcp_storm.grading.outcomes import load_refusal_phrases
+
+        try:
+            refusal_phrases = load_refusal_phrases()
+        except (OSError, ValueError):
+            refusal_phrases = []
     outcome_state = classify(
         exception=exception,
         timed_out=timed_out,
@@ -200,17 +251,6 @@ async def run_one(
     return result
 
 
-def _git_sha() -> str:
-    import subprocess
-
-    try:
-        proc = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
-                              text=True, shell=False, cwd=str(REPO_ROOT))
-        return proc.stdout.strip() if proc.returncode == 0 else "unknown"
-    except OSError:
-        return "unknown"
-
-
 def _append_index(runs_dir: Path, record: dict) -> None:
     import threading
 
@@ -221,21 +261,30 @@ def _append_index(runs_dir: Path, record: dict) -> None:
     runs_dir.mkdir(parents=True, exist_ok=True)
     line = json.dumps(record, separators=(",", ":"), ensure_ascii=False) + "\n"
     with lock:
-        import os as _os
-
-        fd = _os.open(runs_dir / "index.jsonl", _os.O_WRONLY | _os.O_APPEND
-                      | _os.O_CREAT | _os.O_BINARY)
+        fd = os.open(runs_dir / "index.jsonl", os.O_WRONLY | os.O_APPEND
+                     | os.O_CREAT | os.O_BINARY)
         try:
-            _os.write(fd, line.encode("utf-8"))
+            os.write(fd, line.encode("utf-8"))
         finally:
-            _os.close(fd)
+            os.close(fd)
 
 
 def read_index(runs_dir: Path) -> list[dict]:
     path = Path(runs_dir) / "index.jsonl"
     if not path.exists():
         return []
-    return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    records = []
+    torn = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except ValueError:  # torn tail from a crash mid-write: skip, resume lives
+            torn += 1
+    if torn:
+        print(f"[index] skipped {torn} torn line(s) in {path.name}", flush=True)
+    return records
 
 
 def completed_run_ids(runs_dir: Path) -> set[str]:

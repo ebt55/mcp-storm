@@ -112,3 +112,47 @@ the permanent correction log. Entries dated; day-1 falsification results live he
     (`_enter_buffered_busy`). All frames are flushed per write and the ledger
     is fsynced in `Ledger.close()` before the exit, so skipping finalization
     is safe and silences the fatal error.
+
+## 2026-09-18 — runner hardening (adversarial review, pre-launch)
+
+17. **Node attribution via tags.** langgraph 1.2 does not surface
+    `langgraph_node` in callback metadata for handlers attached at the graph
+    level; per-call `metadata` does not propagate up either. The plan/evaluate
+    nodes stamp `config={"tags": ["storm-node:<name>"]}` on the model call
+    (tags DO propagate to inherited callbacks); MeterCallbackHandler parses
+    the `storm-node:` tag. Verified through the real graph (§5.1 per-node
+    attribution).
+
+18. **Proxy startup manifests.** The per-proxy manifest is now written the
+    moment the child spawns (proxy_pid + child_pid) and rewritten at graceful
+    exit with frame counters. A hard-killed proxy never reaches close(), and
+    the runner's watchdog (`taskkill /F /T`) needs pids on disk immediately.
+    Graceful-exit counters remain the frame-equality source (§3.4); startup
+    manifests exist for kills.
+
+19. **Cancellation is not a dataset row.** Ctrl-C/drain (asyncio
+    CancelledError) kills recorded process trees and re-raises WITHOUT
+    appending index.jsonl -- resume retries the run. Previously up to 4
+    in-flight runs per interrupt were permanently recorded `crashed` and then
+    skipped by resume.
+
+20. **Re-running a run_id wipes its directory first** (checkpoints, ledgers,
+    sandboxes, artifacts). Re-runs (§7 harness-bug exclusion) previously
+    inherited poisoned threads, leftover agent artifacts, and appended
+    per-proxy ledgers, corrupting both the grade and retry-storm metrics.
+
+21. **Worker isolation + record salvage.** Matrix workers catch per-run
+    exceptions (a poisoned run logs HARD-FAILED and the matrix continues);
+    refusal phrases load strictly BEFORE any run starts (fail fast).
+    messages.json for timeout/loop/crashed runs is harvested from the
+    AsyncSqliteSaver checkpointer before teardown -- the QLoRA task needs
+    agent-side text precisely for fault-heavy runs. read_index tolerates torn
+    tail lines. The offline gate refuses dirty working trees. One-matrix lock
+    file prevents double-spend from concurrent windows. Zero-tool runs are not
+    join failures (flagged `zero_tool_run`).
+
+22. **Spend accounting notes.** Worst-case breaker overshoot with 4 in-flight
+    mini runs is bounded ≈ $1.44 by recursion_limit 40 + the 600s wall (total
+    < $42, under the $50 cap). The pilot, vignette, and mini-benchmark MUST
+    route through `run_matrix` (or record into spend.jsonl) -- direct `run_one`
+    calls bypass the breaker by design (offline tests).

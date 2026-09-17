@@ -43,7 +43,8 @@ class Cell:
     def run_id(self) -> str:
         mode = self.mode
         dose = "0" if self.mode == "clean" else str(int(self.dose * 100))
-        return f"{self.model.split(':')[-1]}-{mode}-{dose}-{self.task_id}-r{self.replicate}"
+        tag = self.model.replace(":", "-")
+        return f"{tag}-{mode}-{dose}-{self.task_id}-r{self.replicate}"
 
 
 def enumerate_cells(models: list[str], tasks: list[dict]) -> list[Cell]:
@@ -70,14 +71,21 @@ def git_tag_exists(tag: str) -> bool:
     return proc.stdout.strip() == tag
 
 
+def _working_tree_dirty() -> bool:
+    proc = subprocess.run(["git", "status", "--porcelain"], capture_output=True,
+                          text=True, shell=False, cwd=str(REPO_ROOT))
+    return bool(proc.stdout.strip())
+
+
 def write_offline_gate(runs: Path) -> bool:
-    """Run the offline suite; stamp runs/.offline_gate.json with sha+rc."""
+    """Run the offline suite; stamp runs/.offline_gate.json with sha+rc+dirty."""
     rc = subprocess.run([sys.executable, "-m", "pytest", "-q"],
                         cwd=str(REPO_ROOT)).returncode
-    gate = {"git_sha": _git_sha(), "pytest_rc": rc, "ts": __import__("time").time()}
+    gate = {"git_sha": _git_sha(), "pytest_rc": rc, "dirty": _working_tree_dirty(),
+            "ts": __import__("time").time()}
     runs.mkdir(parents=True, exist_ok=True)
     (runs / ".offline_gate.json").write_text(json.dumps(gate), encoding="utf-8")
-    return rc == 0
+    return rc == 0 and not gate["dirty"]
 
 
 def check_offline_gate(runs: Path) -> None:
@@ -94,6 +102,11 @@ def check_offline_gate(runs: Path) -> None:
             f"offline gate is stale: gate sha {gate.get('git_sha')} != HEAD {_git_sha()}; "
             "re-run `storm matrix gate`"
         )
+    if gate.get("dirty") or _working_tree_dirty():
+        raise RuntimeError(
+            "offline gate must be stamped on a clean working tree "
+            "(commit, then `storm matrix gate`)"
+        )
 
 
 def check_prereg_lock() -> None:
@@ -101,6 +114,37 @@ def check_prereg_lock() -> None:
         raise RuntimeError(
             f"prereg law: no paid run before tag {PREREG_TAG} exists (BUILD-GUIDE §2.4)"
         )
+
+
+class MatrixLock:
+    """One matrix at a time: two windows would double-run (and double-spend)
+    every pending cell."""
+
+    def __init__(self, runs: Path) -> None:
+        self.path = Path(runs) / ".matrix.lock"
+        self._held = False
+
+    def __enter__(self) -> "MatrixLock":
+        import os
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, f'{{"pid": {os.getpid()}, "ts": {__import__("time").time()}}}'.encode())
+            os.close(fd)
+            self._held = True
+        except FileExistsError as exc:
+            raise RuntimeError(
+                f"another matrix holds {self.path} (delete it if stale)"
+            ) from exc
+        return self
+
+    def __exit__(self, *exc) -> None:
+        if self._held:
+            try:
+                self.path.unlink()
+            except OSError:
+                pass
 
 
 async def run_matrix(
@@ -119,6 +163,7 @@ async def run_matrix(
     check_offline_gate(runs)
     if backend == "real":
         check_prereg_lock()
+    refusal_phrases = load_refusal_phrases_strict()
 
     cells = enumerate_cells(models, tasks)
     done = completed_run_ids(runs)
@@ -128,6 +173,8 @@ async def run_matrix(
 
     tracker = prices.SpendTracker(runs_dir=runs)
     task_by_id = {t["id"]: t for t in tasks}
+    matrix_lock = MatrixLock(runs)
+    matrix_lock.__enter__()  # released by the finally below
     factory = model_factory or _default_model_factory
     queue: asyncio.Queue[Cell] = asyncio.Queue()
     for cell in pending:
@@ -149,17 +196,27 @@ async def run_matrix(
                 stopped["abort"] = True
                 print(f"[matrix] {exc}; draining active workers", flush=True)
                 return
-            record = await run_one(
-                run_id=cell.run_id,
-                task=task_by_id[cell.task_id],
-                model_name=cell.model,
-                model_factory=factory(cell.model),
-                mode="passthrough" if cell.mode == "clean" else cell.mode,
-                dose=0.0 if cell.mode == "clean" else cell.dose,
-                seed=f"{cell.task_id}-r{cell.replicate}",
-                runs_dir=runs,
-                backend=backend,
-            )
+            try:
+                record = await run_one(
+                    run_id=cell.run_id,
+                    task=task_by_id[cell.task_id],
+                    model_name=cell.model,
+                    model_factory=factory(cell.model),
+                    mode="passthrough" if cell.mode == "clean" else cell.mode,
+                    dose=0.0 if cell.mode == "clean" else cell.dose,
+                    seed=f"{cell.task_id}-r{cell.replicate}",
+                    runs_dir=runs,
+                    backend=backend,
+                    refusal_phrases=refusal_phrases,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - isolate: matrix survives
+                import traceback
+
+                traceback.print_exc()
+                print(f"[matrix] {cell.run_id} HARD-FAILED: {exc!r}", flush=True)
+                continue
             results.append(record)
             print(f"[matrix] {cell.run_id} -> {record['outcome']} "
                   f"(${record['cost_usd']})", flush=True)
@@ -168,8 +225,18 @@ async def run_matrix(
                                 "cost_usd": record["cost_usd"],
                                 "ts": __import__("time").time()})
 
-    await asyncio.gather(*[worker() for _ in range(workers)])
+    try:
+        await asyncio.gather(*[worker() for _ in range(workers)])
+    finally:
+        matrix_lock.__exit__(None, None, None)
     return results
+
+
+def load_refusal_phrases_strict() -> list[str]:
+    """Fail fast: if the prereg list is unreadable the matrix must not start."""
+    from mcp_storm.grading.outcomes import load_refusal_phrases
+
+    return load_refusal_phrases()
 
 
 def _default_model_factory(model_name: str) -> Callable[[], object]:
