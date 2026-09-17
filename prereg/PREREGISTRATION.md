@@ -1,8 +1,10 @@
 # PREREGISTRATION — mcp-storm (v0 SKELETON, predictions only)
 
-> Status: **DRAFT** — skeleton due Wed Sep 23 2026; **locked + tagged `v0.1-prereg`
-> Fri Oct 9 2026. No paid run before the lock.** After the tag this file is
-> frozen; corrections go to DEVIATIONS.md only.
+> Status: **LOCKED and tagged `v0.1-prereg` on 2026-09-18** (early lock with
+> owner consent; the guide's date was Fri Oct 9 — locking earlier only
+> strengthens prereg, DEVIATIONS #25). After the tag this file is frozen;
+> corrections go to DEVIATIONS.md only. Harness-validation smoke runs
+> (`smoke-*` run ids) are excluded from every number.
 > Window: prereg locked Fri Oct 9 2026 → post Fri Nov 13 2026. Hard breaker $40.
 
 ## Design (frozen at lock)
@@ -11,9 +13,14 @@
   latency (fixed 30s delay), hard_error, malformed, partial, dropped.
   Doses 5/10/20/40/70%, one shared dose-0 cell per model. Deterministic
   sha256(run_id:task_id:call_seq) draws.
-- Models: openai:gpt-5-nano, openai:gpt-5-mini (OpenRouter declared fallback).
+- Models (preregistered): openai:gpt-5-nano, openai:gpt-5-mini
+  (reasoning_effort=low pinned in agent/models.py; list prices verified
+  2026-09-18 — nano is $0.05/$0.40, not the guide's $0.06/$0.48, DEVIATIONS #23).
   25 objectively-graded tasks (9 fs / 8 sqlite / 8 cross-server), 2 replicates:
-  2,600 runs total. `reasoning_effort` pinned in agent/models.py.
+  2,600 runs total.
+- Exploratory arms (never scored against prereg claims): OpenRouter
+  or:deepseek-v4-flash and or:glm-5.3-flash on dose-0 + malformed slices
+  (owner-approved value comparison, 2026-09-18).
 - Metrics: completion rate (Wilson 95% CI), token-cost multiplier, retry storms
   (≥3 consecutive identical (tool, args-hash)), P95 wall clock, escalation rate,
   $ per completed task. Breakpoint estimator: crossing dose = smallest dose
@@ -41,8 +48,10 @@
 
 Scoring: `confirmed / partial / refuted` against the pre-registered estimators.
 "Never" predictions are confirmed by curves staying under threshold through 70%.
-At n=50 per cell, below-50% is confirmable only when observed completion ≤36/50;
-borderline cells score 'partial' by design.
+At n=50 per cell, below-50% is confirmable only when observed completion ≤18/50
+(corrected from the guide's ≤36/50, which is arithmetically wrong for the
+Wilson-UB estimator — DEVIATIONS #24); borderline cells whose crossing-cell
+Wilson interval straddles 0.5 score 'partial' by design.
 
 ## Exclusions pre-declared
 

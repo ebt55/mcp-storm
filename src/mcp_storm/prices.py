@@ -4,6 +4,12 @@ Prices are LIST prices per 1M tokens with a fetch date; the manifest records
 the prices hash so every committed artifact is auditable against them. Live
 sum = usage x prices; hard abort at $40, warning at $25, every event appended
 to runs/spend.jsonl.
+
+Fetch 2026-09-18: OpenAI from developers.openai.com/api/docs/pricing (the
+guide's §6.2 nano numbers $0.06/$0.48 were stale -- actual list is
+$0.05/$0.40; DEVIATIONS #23); OpenRouter from openrouter.ai model pages
+(exploratory arms). Data-sharing/free-limit credits are NOT netted here:
+spend.jsonl records gross list cost as the conservative ceiling.
 """
 
 from __future__ import annotations
@@ -14,14 +20,14 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-# Source: BUILD-GUIDE §6.2 assumption table (owner's plan, 17 Sep 2026).
-# Verify against the OpenAI pricing page at the model-smoke step (paid, after
-# the prereg lock); corrections go to prereg/DEVIATIONS.md, not here.
-FETCHED = "2026-09-17"
+FETCHED = "2026-09-18"
 PRICES: dict[str, dict[str, float]] = {
     # usd per 1M tokens; cached_input is the cached-prompt rate when published
-    "openai:gpt-5-nano": {"input": 0.06, "cached_input": 0.015, "output": 0.48},
-    "openai:gpt-5-mini": {"input": 0.25, "cached_input": 0.0625, "output": 2.00},
+    "openai:gpt-5-nano": {"input": 0.05, "cached_input": 0.005, "output": 0.40},
+    "openai:gpt-5-mini": {"input": 0.25, "cached_input": 0.025, "output": 2.00},
+    # exploratory OpenRouter arms (owner-approved value-flash picks)
+    "or:deepseek-v4-flash": {"input": 0.05, "cached_input": 0.01, "output": 0.10},
+    "or:glm-5.3-flash": {"input": 0.075, "cached_input": 0.014, "output": 0.25},
 }
 
 HARD_BREAK_USD = 40.0
@@ -39,17 +45,12 @@ def prices_hash() -> str:
 
 def cost_of(model: str, usage: dict) -> float:
     """usage = usage_metadata dict (input_tokens, output_tokens, and optional
-    input_token_details.cached_tokens). Gross (uncached) pricing by default --
-    cached savings are reported separately, never assumed."""
+    input_token_details.cached_tokens). Gross (uncached) list pricing -- cached
+    savings and any provider credits are reported separately, never assumed."""
     rates = PRICES[model]
     inp = usage.get("input_tokens") or 0
     out = usage.get("output_tokens") or 0
-    cached = ((usage.get("input_token_details") or {}).get("cached_tokens")) or 0
-    gross = inp / 1e6 * rates["input"] + out / 1e6 * rates["output"]
-    # gross-only accounting: cached discount subtracted only when we bill with
-    # it explicitly (runner passes bill_cached=True after the pilot decides)
-    del cached
-    return gross
+    return inp / 1e6 * rates["input"] + out / 1e6 * rates["output"]
 
 
 @dataclass
@@ -61,7 +62,10 @@ class SpendTracker:
         return Path(self.runs_dir) / "spend.jsonl"
 
     def record(self, event: dict) -> None:
-        self.runs_dir.mkdir(parents=True, exist_ok=True)
+        import time as _time
+
+        event = {"ts": _time.time(), **event}
+        Path(self.runs_dir).mkdir(parents=True, exist_ok=True)
         line = json.dumps(event, separators=(",", ":"), ensure_ascii=False) + "\n"
         fd = os.open(self._path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_BINARY)
         try:
@@ -86,9 +90,9 @@ class SpendTracker:
         total = self.total()
         if total >= HARD_BREAK_USD:
             self.record({"kind": "ABORT", "run_id": run_id, "total_usd": round(total, 4),
-                         "breaker": HARD_BREAK_USD, "ts": __import__("time").time()})
+                         "breaker": HARD_BREAK_USD})
             raise BreakerTrip(f"spend breaker tripped at ${total:.2f} (cap ${HARD_BREAK_USD})")
         if total >= WARN_USD and not getattr(self, "_warned", False):
             self.record({"kind": "WARN", "run_id": run_id, "total_usd": round(total, 4),
-                         "threshold": WARN_USD, "ts": __import__("time").time()})
+                         "threshold": WARN_USD})
             self._warned = True

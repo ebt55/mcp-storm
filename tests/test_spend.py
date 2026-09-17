@@ -16,8 +16,11 @@ def test_prices_table_complete_and_hash_stable():
         assert set(prices.PRICES[model]) == {"input", "cached_input", "output"}
     h1, h2 = prices_hash(), prices_hash()
     assert h1 == h2 and len(h1) == 16
-    assert prices.PRICES["openai:gpt-5-nano"]["input"] == 0.06
+    # verified 2026-09-18 at developers.openai.com/api/docs/pricing
+    assert prices.PRICES["openai:gpt-5-nano"]["input"] == 0.05
+    assert prices.PRICES["openai:gpt-5-nano"]["output"] == 0.40
     assert prices.PRICES["openai:gpt-5-mini"]["output"] == 2.00
+    assert prices.PRICES["or:deepseek-v4-flash"]["output"] == 0.10
 
 
 def test_tracker_totals_and_events(tmp_path: Path):
@@ -51,4 +54,4 @@ def test_breaker_warns_then_aborts(tmp_path: Path):
 def test_cost_of_cached_details_ignored_gross():
     usage = {"input_tokens": 1_000_000, "output_tokens": 0,
              "input_token_details": {"cached_tokens": 1_000_000}}
-    assert abs(cost_of("openai:gpt-5-nano", usage) - 0.06) < 1e-9  # gross, not cached
+    assert abs(cost_of("openai:gpt-5-nano", usage) - 0.05) < 1e-9  # gross, not cached

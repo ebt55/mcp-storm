@@ -156,3 +156,26 @@ the permanent correction log. Entries dated; day-1 falsification results live he
     < $42, under the $50 cap). The pilot, vignette, and mini-benchmark MUST
     route through `run_matrix` (or record into spend.jsonl) -- direct `run_one`
     calls bypass the breaker by design (offline tests).
+
+## 2026-09-18 — pre-launch corrections + early lock
+
+23. **gpt-5-nano list price corrected.** Guide §6.2 assumed $0.06/$0.48 per M;
+    the live table (developers.openai.com, fetched 2026-09-18) is
+    $0.05 in / $0.005 cached / $0.40 out. Budget arithmetic improves ~15%.
+    gpt-5-mini $0.25/$0.025/$2.00 matches the guide exactly.
+
+24. **Power note corrected.** The guide's "at n=50 per cell, below-50% is
+    confirmable only when observed completion <= 36/50" is arithmetically
+    wrong for the preregistered estimator (Wilson UB < 50%): 36/50 has
+    UB ≈ 0.83. The correct threshold is **<= 18/50** (18/50 UB ≈ 0.494;
+    19/50 UB ≈ 0.517). The estimator itself is unchanged; the note in
+    predictions.json now carries the corrected threshold.
+
+25. **Prereg locked early (2026-09-18, not Oct 9), with owner consent.**
+    Locking earlier only strengthens prereg (predictions frozen further from
+    any data). Preregistered pair unchanged (gpt-5-nano + gpt-5-mini).
+    Owner-approved EXPLORATORY arms added before the lock: OpenRouter
+    or:deepseek-v4-flash ($0.05/$0.10 per M) and or:glm-5.3-flash
+    ($0.075/$0.25 per M) — dose-0 + malformed slices only, never scored
+    against prereg claims. Owner holds OpenAI data-sharing credits and an
+    OpenRouter key; spend.jsonl records gross list cost as the ceiling.

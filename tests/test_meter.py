@@ -36,13 +36,13 @@ def test_usage_accumulation_per_node():
     assert summary["totals"]["llm_calls"] == 4
     assert summary["per_node"]["plan"]["llm_calls"] == 3
     assert summary["per_node"]["evaluate"]["input_tokens"] == 300
-    # gross pricing: 600/1M*0.06 + 35/1M*0.48
-    assert abs(cost - (600 / 1e6 * 0.06 + 35 / 1e6 * 0.48)) < 1e-12
+    # gross list pricing (verified 2026-09-18): 600/1M*0.05 + 35/1M*0.40
+    assert abs(cost - (600 / 1e6 * 0.05 + 35 / 1e6 * 0.40)) < 1e-12
 
 
 def test_cost_of_math():
     usage = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
-    assert abs(cost_of("openai:gpt-5-nano", usage) - (0.06 + 0.48)) < 1e-9
+    assert abs(cost_of("openai:gpt-5-nano", usage) - (0.05 + 0.40)) < 1e-9
     assert abs(cost_of("openai:gpt-5-mini", usage) - (0.25 + 2.00)) < 1e-9
 
 
