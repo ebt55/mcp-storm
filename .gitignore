@@ -7,3 +7,4 @@ __pycache__/
 runs/*
 !runs/.gitkeep
 .env
+runs/.offline_gate.json
