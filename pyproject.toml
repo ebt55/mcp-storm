@@ -1,0 +1,53 @@
+[project]
+name = "mcp-storm"
+version = "0.1.0"
+description = "Fault-injection proxy at the MCP boundary: dose-response curves for LangGraph agents (completion, cost multiplier, retry storms, P95, $/task)."
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+dependencies = [
+    "langgraph>=1.2.9,<1.3",
+    "langchain>=0.3",
+    "langchain-openai>=0.3",
+    "langchain-mcp-adapters>=0.1",
+    "mcp>=1.27,<2",
+    "langgraph-checkpoint-sqlite>=2.0",
+    "openai>=2",
+    "typer>=0.12",
+    "rich>=13",
+    "pydantic>=2",
+    "httpx>=0.27",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+
+[project.scripts]
+storm = "mcp_storm.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_storm"]
+
+[tool.pytest.ini_options]
+addopts = "-m 'not paid and not realserver and not slow'"
+markers = [
+    "paid: spends money on a model API (excluded by default; prereg law: no paid run before v0.1-prereg tag)",
+    "realserver: needs uvx network fetch of pinned real MCP servers (excluded by default)",
+    "slow: runs >30s (e.g. full 45s timeout falsification)",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
