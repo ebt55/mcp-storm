@@ -210,3 +210,25 @@ the permanent correction log. Entries dated; day-1 falsification results live he
     task set untouched). Pilot cells (nano 75 + mini 5) excluded via
     scripts/exclude_runs.py and re-run from scratch. Nano's low completion may
     persist (capability floor, #26) -- the re-run separates the two causes.
+
+## 2026-09-23 — pre-main-matrix impact review (external, hostile)
+
+29. **Framing correction (pre-data, main matrix NOT yet launched).** A hostile
+    prior-art review (verified citations in prereg/PRIOR-ART.md) found the
+    robustness-under-tool-faults genre is now published (Lewandowska 2026;
+    ToolMaze arXiv:2606.05806; AgentChaos arXiv:2608.06790 faults the
+    model-response side; MAS-FIRE; AgentNoiseBench), so the guide §17 "first
+    ... completion characterization" wording would die under scrutiny.
+    Corrections applied BEFORE the main matrix: (a) the project's first-claim
+    is re-aimed to the unmeasured cost corner -- token-cost multiplier,
+    retry-storm rates, $/completed-task vs dose, at the MCP stdio boundary,
+    preregistered; (b) benchmark-broccoli citation removed (unfindable in any
+    index); (c) AgentChaos differentiation reworded to tool-response side vs
+    model-response side; (d) README leads with cost/storm/$ numbers,
+    completion breakpoint demoted to secondary (it is also the statistically
+    soft endpoint per the corrected power note #24); (e) "reference servers"
+    replaces "real servers" externally; (f) scope statement for stdio vs the
+    2026-07-28 remote spec. Locked predictions, tasks, and harness are
+    UNCHANGED. SHOULD-tier corrections queued: storm wrap quickstart, QLoRA
+    frontier-baseline row, vignette reframe to measurement+spec-discussion,
+    pgvector rider cut (done in README status).
