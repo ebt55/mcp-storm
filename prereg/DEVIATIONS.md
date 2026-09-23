@@ -278,3 +278,23 @@ the permanent correction log. Entries dated; day-1 falsification results live he
     arm and the main matrix never ran; deepseek clean is n=24 (xs-07 never
     recorded — re-queued). Fix: gate refusal now aborts the chain
     (set -e), and launches verify index growth before reporting success.
+
+## 2026-09-24 — budget regime change (owner directive: free-credit plan)
+
+33. **Real-money budget closed to ~zero; matrix continues on provider
+    credits.** Owner directive 2026-09-24: the plan's budget is free credits
+    (OpenAI data-sharing program), not cash. Changes, effective immediately:
+    (a) OpenRouter arms are CLOSED at sunk cost -- real out-of-pocket to date
+    \$0.164 (deepseek slice 79 runs incl. its 3 smoke; glm 3 smoke runs only;
+    the glm tail is cancelled; deepseek clean stays n=24 with xs-07 never
+    recorded -- noted, cell reported at its achieved n); (b) all further runs
+    use the preregistered OpenAI pair only, whose usage is credit-covered --
+    nano AS LOCKED (already partially run) and the RUN-MODIFIED mini phases
+    (#31) are unchanged in design; (c) a separate REAL-MONEY breaker now
+    gates the matrix: hard abort at \$1.00 real (warn \$0.50), computed from
+    index records with OpenRouter models as the only real-money lines, in
+    addition to the \$40 gross-list tracker; (d) sustained API rate limiting
+    (5+ consecutive 429-class crashes) aborts the chain before data
+    pollution, protecting the free-limit quota; crashed-run records now
+    carry the exception text. Gross-list costs continue to be tracked and
+    reported for transparency -- they are ledger entries, not out-of-pocket.

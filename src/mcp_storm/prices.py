@@ -33,6 +33,27 @@ PRICES: dict[str, dict[str, float]] = {
 HARD_BREAK_USD = 40.0
 WARN_USD = 25.0
 
+# Budget regime (owner directive 2026-09-24: free-credit plan, DEVIATIONS #33):
+# models whose usage is covered by provider credits (OpenAI data sharing) cost
+# no real money; OpenRouter arms are closed. The REAL-MONEY breaker is a
+# separate, much tighter cap computed from index records.
+CREDITED_MODEL_PREFIXES = ("openai:",)
+REAL_HARD_BREAK_USD = 1.0
+REAL_WARN_USD = 0.50
+
+
+def split_gross(index_records: list[dict]) -> tuple[float, float]:
+    """(real_money_usd, credited_gross_usd) from index run records."""
+    real = credited = 0.0
+    for r in index_records:
+        cost = float(r.get("cost_usd", 0.0))
+        model = str(r.get("model", ""))
+        if model.startswith(CREDITED_MODEL_PREFIXES):
+            credited += cost
+        else:
+            real += cost
+    return real, credited
+
 
 class BreakerTrip(RuntimeError):
     """Raised when live spend crosses the hard breaker: stop launching runs."""

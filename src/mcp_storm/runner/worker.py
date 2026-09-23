@@ -239,6 +239,8 @@ async def run_one(
     result.update(
         {
             **outcome_state,
+            "error": (f"{type(exception).__name__}: {str(exception)[:200]}"
+                      if exception is not None else ""),
             "grader_failures": grader_result["failures"][:10],
             "tokens_in": meter_summary["totals"]["input_tokens"],
             "tokens_out": meter_summary["totals"]["output_tokens"],

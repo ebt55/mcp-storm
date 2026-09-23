@@ -183,6 +183,7 @@ async def run_matrix(
     task_by_id = {t["id"]: t for t in tasks}
     matrix_lock = MatrixLock(runs)
     matrix_lock.__enter__()  # released by the finally below
+    rate_limited_streak = 0
     factory = model_factory or _default_model_factory
     queue: asyncio.Queue[Cell] = asyncio.Queue()
     for cell in pending:
@@ -200,6 +201,19 @@ async def run_matrix(
                 return
             try:
                 tracker.gate(cell.run_id)
+                # real-money breaker: credited providers cost nothing real
+                from mcp_storm.prices import REAL_HARD_BREAK_USD, REAL_WARN_USD, split_gross
+                from mcp_storm.runner.worker import read_index
+                real, _credited = split_gross(read_index(runs))
+                if real >= REAL_HARD_BREAK_USD:
+                    raise BreakerTrip(
+                        f"REAL-money breaker tripped at ${real:.2f} "
+                        f"(cap ${REAL_HARD_BREAK_USD})"
+                    )
+                if real >= REAL_WARN_USD and not getattr(tracker, "_real_warned", False):
+                    tracker.record({"kind": "REAL_WARN", "run_id": cell.run_id,
+                                    "real_usd": round(real, 4)})
+                    tracker._real_warned = True
             except BreakerTrip as exc:
                 stopped["abort"] = True
                 print(f"[matrix] {exc}; draining active workers", flush=True)
@@ -226,6 +240,19 @@ async def run_matrix(
                 print(f"[matrix] {cell.run_id} HARD-FAILED: {exc!r}", flush=True)
                 continue
             results.append(record)
+            err = str(record.get("error") or "")
+            if "429" in err or "rate limit" in err.lower():
+                rate_limited_streak += 1
+                print(f"[matrix] RATE-LIMITED ({rate_limited_streak} in a row): "
+                      f"{cell.run_id}", flush=True)
+                if rate_limited_streak >= 5:
+                    stopped["abort"] = True
+                    print("[matrix] aborting: sustained rate limiting -- free "
+                          "limit likely reached; halting before data pollution",
+                          flush=True)
+                    return
+            else:
+                rate_limited_streak = 0
             print(f"[matrix] {cell.run_id} -> {record['outcome']} "
                   f"(${record['cost_usd']})", flush=True)
             if record.get("cost_usd"):
