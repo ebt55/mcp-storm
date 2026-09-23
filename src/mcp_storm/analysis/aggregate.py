@@ -18,7 +18,14 @@ from mcp_storm.runner.worker import read_index
 
 def aggregate(index_records: list[dict], ledger_rows_by_run: dict[str, list[dict]] | None = None,
               ) -> list[dict[str, Any]]:
-    """One row per (model, mode, dose) cell with Wilson CIs and derived metrics."""
+    """One row per (model, mode, dose) cell with Wilson CIs and derived metrics.
+
+    Metric notes (review 2026-09-23): cost_multiplier_completed isolates retry
+    economics from failure truncation (all-run means mix both);
+    wall_p95_non_timeout_s is the cap-safe percentile with timeout_rate
+    reported alongside; retry2_runs counts >=2 consecutive identical calls
+    (secondary threshold -- the locked C3 metric stays >=3); all dollars are
+    GROSS LIST (cached-input discounts and provider credits never netted)."""
     cells: dict[tuple, list[dict]] = {}
     for r in index_records:
         if str(r.get("run_id", "")).startswith("smoke-"):
@@ -27,32 +34,40 @@ def aggregate(index_records: list[dict], ledger_rows_by_run: dict[str, list[dict
         mode = "clean" if r.get("dose") in (0, 0.0) else r.get("mode", "clean")
         cells.setdefault((model, mode, float(r.get("dose", 0.0))), []).append(r)
 
+    def toks(r: dict) -> int:
+        return r.get("tokens_in", 0) + r.get("tokens_out", 0)
+
     clean_tokens: dict[str, float] = {}
+    clean_completed_tokens: dict[str, float] = {}
     for (model, mode, dose), runs in cells.items():
         if mode == "clean":
-            clean_tokens[model] = statistics.mean(
-                [r.get("tokens_in", 0) + r.get("tokens_out", 0) for r in runs]
-            )
+            clean_tokens[model] = statistics.mean([toks(r) for r in runs])
+            done = [toks(r) for r in runs if r.get("outcome") == "completed"]
+            clean_completed_tokens[model] = statistics.mean(done) if done else 0.0
 
     rows: list[dict[str, Any]] = []
     for (model, mode, dose), runs in sorted(cells.items()):
         n = len(runs)
         completed = sum(1 for r in runs if r.get("outcome") == "completed")
         lo, hi = wilson_ci(completed, n)
-        tokens = [r.get("tokens_in", 0) + r.get("tokens_out", 0) for r in runs]
-        mean_tokens = statistics.mean(tokens) if tokens else 0.0
+        mean_tokens = statistics.mean([toks(r) for r in runs]) if runs else 0.0
+        done_tokens = [toks(r) for r in runs if r.get("outcome") == "completed"]
+        mean_done_tokens = statistics.mean(done_tokens) if done_tokens else 0.0
+        timeouts = sum(1 for r in runs if r.get("outcome") == "timeout")
         walls = [r.get("wall_s", 0.0) for r in runs]
+        walls_nt = [r.get("wall_s", 0.0) for r in runs if r.get("outcome") != "timeout"]
         cost = sum(r.get("cost_usd", 0.0) for r in runs)
-        storms = storm_runs = 0
+        storms3 = storms2 = 0
         if ledger_rows_by_run:
-            checked = 0
             for r in runs:
                 lrows = ledger_rows_by_run.get(r.get("run_id", ""), [])
-                if lrows:
-                    checked += 1
-                    if retry_metrics(lrows)["storm_run"]:
-                        storm_runs += 1
-            storms = storm_runs
+                if not lrows:
+                    continue
+                m = retry_metrics(lrows)
+                if m["storm_run"]:
+                    storms3 += 1
+                if m["wasted_calls"] > 0:
+                    storms2 += 1
         rows.append(
             {
                 "model": model, "mode": mode, "dose": dose, "n": n,
@@ -62,12 +77,18 @@ def aggregate(index_records: list[dict], ledger_rows_by_run: dict[str, list[dict
                 "mean_tokens": round(mean_tokens, 1),
                 "cost_multiplier": (round(mean_tokens / clean_tokens[model], 3)
                                     if clean_tokens.get(model) else None),
+                "cost_multiplier_completed": (
+                    round(mean_done_tokens / clean_completed_tokens[model], 3)
+                    if completed and clean_completed_tokens.get(model) else None),
                 "escalated": sum(1 for r in runs if r.get("escalated")),
                 "refusals": sum(1 for r in runs if r.get("refusal")),
-                "retry_storm_runs": storms,
+                "retry_storm_runs": storms3,
+                "retry2_runs": storms2,
+                "timeout_rate": round(timeouts / n, 4) if n else 0.0,
                 "wall_p95_s": round(p95(walls), 1),
-                "cost_usd": round(cost, 4),
-                "usd_per_completed": round(cost / completed, 4) if completed else None,
+                "wall_p95_non_timeout_s": round(p95(walls_nt), 1),
+                "cost_usd_gross": round(cost, 4),
+                "usd_per_completed_gross": round(cost / completed, 4) if completed else None,
                 "outcomes": {
                     o: sum(1 for r in runs if r.get("outcome") == o)
                     for o in ("completed", "wrong_answer", "loop", "timeout", "crashed")
@@ -107,17 +128,25 @@ def write_tables(rows: list[dict[str, Any]], runs: Path) -> dict[str, Path]:
     lines = [
         "# mcp-storm — dose-response summary (regenerated from runs/)",
         "",
-        "| model | mode | dose | n | completed | rate (95% CI) | cost× | storms | P95 s | $/done |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "All dollars GROSS LIST (no cached-input discount, no provider credits).",
+        "cost× = all-run token multiplier; cost×c = among completed runs only",
+        "(isolates retry economics from failure truncation). wall P95(nt) =",
+        "P95 wall of non-timeout runs (timeout_rate reported beside it).",
+        "",
+        "| model | mode | dose | n | done | rate (95% CI) | cost× | cost×c | storms≥3 | storms≥2 | t/o | P95nt s | $/done |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
+    def fmt(v):
+        return "—" if v is None else v
     for row in rows:
         lines.append(
             f"| {row['model']} | {row['mode']} | {row['dose']:.0%} | {row['n']} | "
             f"{row['completed']} | {row['completion_rate']:.0%} "
             f"([{row['completion_ci_lo']:.0%}, {row['completion_ci_hi']:.0%}]) | "
-            f"{row['cost_multiplier'] if row['cost_multiplier'] is not None else '—'} | "
-            f"{row['retry_storm_runs']} | {row['wall_p95_s']} | "
-            f"{row['usd_per_completed'] if row['usd_per_completed'] is not None else '—'} |"
+            f"{fmt(row['cost_multiplier'])} | {fmt(row['cost_multiplier_completed'])} | "
+            f"{row['retry_storm_runs']} | {row['retry2_runs']} | "
+            f"{row['timeout_rate']:.0%} | {row['wall_p95_non_timeout_s']} | "
+            f"{fmt(row['usd_per_completed_gross'])} |"
         )
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return {"csv": csv_path, "markdown": md_path}

@@ -232,3 +232,49 @@ the permanent correction log. Entries dated; day-1 falsification results live he
     UNCHANGED. SHOULD-tier corrections queued: storm wrap quickstart, QLoRA
     frontier-baseline row, vignette reframe to measurement+spec-discussion,
     pgvector rider cut (done in README status).
+
+## 2026-09-23 — design review (internal, hostile) → RUN-MODIFIED plan
+
+30. **Scorer fixes (analysis code only; predictions.json untouched).** The
+    frozen prereg_checks had four defects found by hostile review with
+    synthetic data: (a) C1 multipliers shared one dict across models — the
+    last-iterating model (including EXPLORATORY arms) overwrote the
+    preregistered pair's curves; (b) C3 storm rates took the last dose cell's
+    rate (order-dependent verdicts) instead of pooling; (c) the latency band
+    string "never-below-70%; P95>=3x-dose0-at-40%+" crashed float parsing
+    (sub-claims are now split off and reported separately); (d) the
+    "straddles 0.5 → partial" power rule was unreachable (a fired crossing
+    has UB<0.5 by definition) — replaced with the reachable rule: a fired
+    crossing whose own cell rate exceeds 0.30 scores partial (at n=50,
+    18/50=0.36 fires weakly; the 80%-power zone is ≤0.30). Aggregate metrics
+    upgraded: cost_multiplier_completed (isolates retry economics from
+    failure truncation), timeout_rate + P95-of-non-timeout (P95 was a
+    600s-cap indicator), retry2_runs (>=2-consecutive secondary; locked C3
+    stays >=3), all dollars labeled GROSS LIST. 120 offline tests green
+    incl. regression tests for every defect.
+
+31. **Run-plan modification, declared BEFORE mini fault cells or nano fault
+    cells run (only clean baselines + deepseek exploratory exist in the
+    index).** Power analysis on early data: (a) C1 >3x multipliers are
+    structurally capped by recursion_limit=40 (~2-3.5x ceiling observed) —
+    verdicts will be scored honestly, expected refuted-by-cap; (b) malformed
+    saturates at <=10% dose for deepseek (36% vs 36% at 10/40, McNemar
+    p=0.64, task-variance 29x dose-variance) — the interesting economics are
+    expected in dropped/hard_error (explicit error ToolMessages are what
+    agents actually retry). Plan: nano runs AS LOCKED (predictions must score
+    against the frozen pair; its verdicts are annotated floor-confounded per
+    #26 — the floor is a reportable capability baseline); mini malformed +
+    dropped + hard_error run full 5-dose x 25 x 2 (the live claims); mini
+    partial + latency descoped to r=1 (their "never" bands remain confirmable
+    at n=25 — a true 50% rate has Wilson UB 69% — and crossings become
+    partial-by-low-n, which is honest); if spend < $15 at the half-way
+    check, add replicates on mini malformed {5,10,40} where the only observed
+    gradient (0→10%) lives. Exploratory arms never enter prereg scoring.
+
+32. **Phases-launcher incident (2026-09-18).** The first chained launcher
+    ran all three phases in 6 seconds: each `storm matrix run` refused on
+    the offline gate (dirty tree — the launcher script itself was
+    uncommitted) and the shell script echoed success regardless. The glm
+    arm and the main matrix never ran; deepseek clean is n=24 (xs-07 never
+    recorded — re-queued). Fix: gate refusal now aborts the chain
+    (set -e), and launches verify index growth before reporting success.

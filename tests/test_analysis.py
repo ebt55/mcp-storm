@@ -159,3 +159,98 @@ def test_aggregate_with_ledger_storms():
     }
     rows = aggregate(records, ledger_rows_by_run=ledgers)
     assert rows[0]["retry_storm_runs"] == 1
+
+
+# ------------------------- scorer regression tests (design review 2026-09-23)
+def _rec(model, mode, dose, outcome, tokens, run_id):
+    return {"run_id": run_id, "model": model, "mode": mode, "dose": dose,
+            "outcome": outcome, "escalated": False, "refusal": False,
+            "tokens_in": tokens, "tokens_out": 0, "cost_usd": 0.0, "wall_s": 60.0}
+
+
+def test_c1_no_model_collision():
+    """Two prereg models with different multipliers must score independently."""
+    records = []
+    # nano: multiplier stays 1.2 (never >3)
+    records += [_rec("openai:gpt-5-nano", "clean", 0.0, "completed", 1000, f"nc{i}") for i in range(5)]
+    records += [_rec("openai:gpt-5-nano", "malformed", 0.4, "completed", 1200, f"nm{i}") for i in range(5)]
+    # mini: multiplier 7.0 at 10% dose (>3)
+    records += [_rec("openai:gpt-5-mini", "clean", 0.0, "completed", 1000, f"mc{i}") for i in range(5)]
+    records += [_rec("openai:gpt-5-mini", "malformed", 0.1, "completed", 7000, f"mm{i}") for i in range(5)]
+    # exploratory arm with an extreme multiplier: must NEVER touch prereg scoring
+    records += [_rec("or:deepseek-v4-flash", "clean", 0.0, "completed", 1000, f"ec{i}") for i in range(5)]
+    records += [_rec("or:deepseek-v4-flash", "malformed", 0.05, "completed", 99000, f"em{i}") for i in range(5)]
+    scored = pc.score_all(records, ledger_rows_by_run={})
+    nano = scored["C1"]["malformed"]["gpt-5-nano"]
+    mini = scored["C1"]["malformed"]["gpt-5-mini"]
+    assert nano["observed_first_dose"] is None and nano["verdict"] == "refuted"
+    assert mini["observed_first_dose"] == 0.10 and mini["verdict"] in ("confirmed", "partial")
+    assert "deepseek-v4-flash" not in scored["C1"]["malformed"]
+
+
+def test_c1_order_independent():
+    records = ([_rec("openai:gpt-5-nano", "clean", 0.0, "completed", 1000, f"a{i}") for i in range(3)]
+               + [_rec("openai:gpt-5-nano", "malformed", 0.1, "completed", 5000, f"b{i}") for i in range(3)]
+               + [_rec("openai:gpt-5-mini", "clean", 0.0, "completed", 1000, f"c{i}") for i in range(3)]
+               + [_rec("openai:gpt-5-mini", "malformed", 0.1, "completed", 1100, f"d{i}") for i in range(3)])
+    forward = pc.score_all(list(records), ledger_rows_by_run={})
+    reverse = pc.score_all(list(reversed(records)), ledger_rows_by_run={})
+    assert forward["C1"] == reverse["C1"]
+    assert forward["C2"] == reverse["C2"]
+
+
+def test_c3_pooled_across_doses_not_order_dependent():
+    """C3 pools storm counts across ALL doses deterministically (was: last
+    dose's rate won, verdicts flipped with index order)."""
+    base = ([_rec("openai:gpt-5-nano", "clean", 0.0, "completed", 1000, f"c{i}") for i in range(3)])
+    mal = ([_rec("openai:gpt-5-nano", "malformed", d, "completed", 1000, f"m{d}-{i}")
+            for d in (0.05, 0.40) for i in range(3)])
+    ledgers = {}
+    # exactly ONE stormy run (of 6 malformed): pooled 1/6 -> refuted (<20%)
+    for r in mal:
+        first_stormy = r["run_id"] == "m0.05-0"
+        rows = ([{"tool": "t", "args_hash": "x", "t_request_ns": i} for i in range(3)]
+                if first_stormy else
+                [{"tool": "t", "args_hash": str(i), "t_request_ns": i} for i in range(3)])
+        ledgers[r["run_id"]] = rows
+    scored = pc.score_all(base + mal, ledger_rows_by_run=ledgers)
+    entry = scored["C3"]["gpt-5-nano"]
+    assert entry["stormy"] == 1 and entry["checked"] == 6
+    assert entry["observed_rate"] == pytest.approx(1 / 6, abs=1e-4)
+    assert entry["verdict"] == "refuted"
+    # reversed order must give the identical pooled verdict
+    scored_rev = pc.score_all(list(reversed(base + mal)), ledger_rows_by_run=ledgers)
+    assert scored_rev["C3"] == scored["C3"]
+
+
+def test_latency_band_with_subclaim_parses():
+    band = "never-below-70%; P95>=3x-dose0-at-40%+"
+    assert pc.split_band(band) == ("never-below-70%", "P95>=3x-dose0-at-40%+")
+    assert pc._band_contains(band, None) == "confirmed"  # used to crash
+    assert pc._band_contains(band, 0.70) == "confirmed"
+    assert pc._band_contains(band, 0.40) == "refuted"
+    assert pc._band_contains("never", None) == "confirmed"
+
+
+def test_c2_power_rule_reachable():
+    """A fired crossing whose cell rate > 0.30 is weakly supported -> partial.
+    (The weak zone exists at n=50: k=18/50 fires Wilson-UB<0.5 at rate 0.36.)"""
+    records = ([_rec("openai:gpt-5-mini", "clean", 0.0, "completed", 1000, f"c{i}") for i in range(3)])
+    for d, done in [(0.05, 48), (0.10, 45), (0.20, 40), (0.40, 18), (0.70, 5)]:
+        for i in range(50):
+            records.append(_rec("openai:gpt-5-mini", "malformed", d,
+                                "completed" if i < done else "wrong_answer", 1000,
+                                f"m{d}-{i}"))
+    scored = pc.score_all(records, ledger_rows_by_run={})
+    entry = scored["C2"]["malformed"]["gpt-5-mini"]
+    assert entry["observed_crossing"] == 0.40
+    assert entry["verdict"] == "partial"  # 18/50=0.36 > 0.30: weak crossing
+    # a hard crossing (4/50 = 0.08 at 0.40) confirms per band
+    records2 = ([_rec("openai:gpt-5-mini", "clean", 0.0, "completed", 1000, f"c{i}") for i in range(3)])
+    for d, done in [(0.05, 48), (0.10, 45), (0.20, 30), (0.40, 4), (0.70, 0)]:
+        for i in range(50):
+            records2.append(_rec("openai:gpt-5-mini", "malformed", d,
+                                 "completed" if i < done else "wrong_answer", 1000,
+                                 f"n{d}-{i}"))
+    entry2 = pc.score_all(records2, ledger_rows_by_run={})["C2"]["malformed"]["gpt-5-mini"]
+    assert entry2["observed_crossing"] == 0.40 and entry2["verdict"] == "confirmed"
