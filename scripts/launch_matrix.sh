@@ -15,4 +15,7 @@ uv run storm matrix run --models openai:gpt-5-mini --modes malformed,dropped,har
 note "phase C: mini partial + latency at r1 (DEVIATIONS #31 descope)"
 uv run storm matrix run --models openai:gpt-5-mini --modes partial,latency --replicates 1 --workers 4 >> runs/matrix-mini-flat.log 2>&1
 
-note "ALL OPENAI PHASES COMPLETE"
+note "phase D: glm exploratory tail (owner-approved <=\ real; expected ~\/usr/bin/bash.3)"
+uv run storm matrix run --models or:glm-5.3-flash --modes clean,malformed --doses 0.1,0.4 --replicates 1 --workers 4 >> runs/exploratory-glm.log 2>&1
+
+note "ALL PHASES COMPLETE"

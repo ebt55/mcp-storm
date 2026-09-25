@@ -298,3 +298,7 @@ the permanent correction log. Entries dated; day-1 falsification results live he
     pollution, protecting the free-limit quota; crashed-run records now
     carry the exception text. Gross-list costs continue to be tracked and
     reported for transparency -- they are ledger entries, not out-of-pocket.
+
+34. **GLM tail re-approved (owner, 2026-09-24, <=\$5 real).** The glm-5.3-flash
+    exploratory slice (75 runs, expected ~\$0.30 gross) is re-included after
+    #33 closed OpenRouter arms; the \$1 real-money breaker still gates it.
