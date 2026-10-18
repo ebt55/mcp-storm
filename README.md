@@ -117,3 +117,10 @@ src/mcp_storm/analysis/  frozen estimators (Wilson CI, crossing dose, Cochran-Ar
 prereg/                  locked predictions, prior-art notes, 34-entry deviations log
 tasks/                   25 task definitions + fixtures + the frozen system prompt
 ```
+
+## Licence
+
+MIT, see [`LICENSE`](LICENSE). `vendor/filesystem/` holds the MCP reference filesystem
+server (`@modelcontextprotocol/server-filesystem` 2025.7.1, MIT, Copyright Anthropic, PBC) and its npm
+dependencies, each under its own permissive licence (MIT, ISC, BlueOak-1.0.0, BSD). The server's npm
+package ships no licence file, so its text is in `vendor/filesystem/LICENSE-server-filesystem.txt`.
