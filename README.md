@@ -38,14 +38,19 @@ consecutive calls, with a 2-plus count as a secondary metric), timeout rate,
 P95 wall time of non-timeout runs, and dollars per completed task at list
 prices.
 
-## Numbers so far
+## Status: the study was run but never scored or published
 
-The preregistered matrix is running as of 2026-09-25. Every number regenerates
-from committed records with `uv run storm report --all` into `runs/summary.md`
-and `runs/cells.csv`.
+Most of the preregistered matrix was run locally in September 2026 (2,470 run
+records, the last on 25 September). It was never scored against the locked
+predictions, and the run records are not in this repository: `runs/` is
+gitignored and holds only a placeholder. Nothing in this section can be
+regenerated from a clone. What is published here is the tool, the tasks and
+the tests, not a result. With run records of your own, `uv run storm report
+--all` writes `runs/summary.md` and `runs/cells.csv`.
 
-One complete exploratory slice (deepseek-v4-flash over OpenRouter, 75 runs,
-replicate 1):
+One exploratory slice from those local records (deepseek-v4-flash over
+OpenRouter, 75 runs, replicate 1). With 25 runs per cell the completion
+intervals overlap, so read these as illustrations, not findings:
 
 - clean completion 48% (12/25). Malformed at 10% dose: 36%. At 40% dose: 36%.
   The response to malformed output saturates by the 10% dose. After that,
@@ -57,8 +62,9 @@ replicate 1):
 - retry storms (3+ identical consecutive calls): 0 of 25 runs at 10% dose,
   4 of 25 at 40%.
 
-Total spend to date: $0.16 of real money (the OpenRouter arm) plus $0.56 gross
-on the credit-covered OpenAI arms.
+Spend: the local run records total about $9 at list prices. An earlier version
+of this README gave $0.16 of real money plus $0.56 gross, which covered only
+the first runs.
 
 ## The 25 tasks
 
@@ -96,9 +102,10 @@ number here.
 
 Prior art is in `prereg/PRIOR-ART.md`. Agents degrading under tool faults is
 a published genre (Lewandowska 2026, ToolMaze, AgentChaos at the LLM response
-layer, MAS-FIRE). None of them measured the cost side. This project measures
-token multiplier, retry storms, and dollars per completed task against fault
-dose, preregistered, at the protocol boundary.
+layer, MAS-FIRE). None of them measured the cost side. This project was built to
+measure token multiplier, retry storms, and dollars per completed task against
+fault dose, preregistered, at the protocol boundary. That measurement has not
+been scored or published (see Status above).
 
 Scope: stdio transport, pinned SDKs (mcp 1.30), LangGraph, two preregistered
 models plus exploratory flash arms. Remote MCP is out of scope. Completion
